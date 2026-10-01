@@ -286,8 +286,8 @@ async def preregistration_api(request: Request):
             record = await create_record(str(uuid.uuid4()), protocol(), data)
             return response({"ok": True, "protocol": record["protocol"], "status": record["status"]}, 201)
 
-        if not legacy_internal_authorized(request):
-            return response({"ok": False, "error": "Chave interna inválida."}, 401)
+        if not await legacy_internal_authorized(request):
+            return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
 
         if request.method == "GET":
             status = text(request.query_params.get("status"), 30)

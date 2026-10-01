@@ -19,7 +19,7 @@ Este repositório contém somente código, estrutura e migrations. Não inclui a
 
 O ERP usa PostgreSQL diretamente pelo backend FastAPI. Na Vercel, conecte o projeto ao Neon e confirme que a integração criou `DATABASE_URL` em **Production** (e em Preview se desejar).
 
-Variáveis mínimas:
+Variáveis mínimas (o `SESSION_SECRET` é obrigatório e não possui fallback):
 
 ```env
 DATABASE_URL=postgresql://...
@@ -59,3 +59,18 @@ O ERP é operado como sistema online. Durante uma sessão autenticada, a versão
 Não são permitidos backups locais automáticos, cópias de erro ou filas offline contendo dados pessoais. O Service Worker guarda somente assets estáticos versionados (JavaScript, CSS e imagens), nunca HTML autenticado nem respostas de API.
 
 O navegador pode manter apenas preferências não pessoais enquanto a sessão estiver ativa, por exemplo cores de navegação e estado visual. Nenhuma preferência desse tipo deve conter nomes, CPF, contatos, dados de saúde, financeiro ou documentos. Ao encerrar a sessão, todas as chaves com prefixo `arteDeAprenderERP.` são removidas de `localStorage` e `sessionStorage`, e os caches do aplicativo são apagados.
+
+
+## Matriz de permissões
+
+| Ação | owner | admin | manager | teacher |
+| --- | --- | --- | --- | --- |
+| Gestão administrativa geral | Sim | Sim | Sim | Não |
+| Chamada de professores | Sim | Sim | Sim | Sim |
+| Sincronização normal | Sim | Sim | Sim | Não |
+| Sincronização forçada / exclusões via sync | Sim | Sim | Não | Não |
+| Excluir funcionários | Sim | Sim | Não | Não |
+| Ler/baixar/enviar/excluir documentos de funcionários | Sim | Sim | Não | Não |
+| Alterar configuração/destinatários do WhatsApp | Sim | Sim | Não | Não |
+
+O papel efetivo é consultado no Neon em cada autorização, com cache em memória de no máximo 60 segundos. O papel gravado no cookie não é usado como fonte de autorização. Se o banco de autorização estiver indisponível, o acesso é negado.

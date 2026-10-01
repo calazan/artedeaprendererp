@@ -12,16 +12,19 @@ from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from . import APP_VERSION
-from .auth_store import authenticate_user, get_active_membership
-from .config import database_configured, database_url, remote_sync_key, session_secret
+from .auth_store import authenticate_user, get_active_membership, increment_session_version
+from .config import database_configured, session_secret
 from .preregistration import consume_rate_limit
 
 SESSION_COOKIE = "smg_session"
 SESSION_TTL_SECONDS = 8 * 60 * 60
-SESSION_VERSION = 2
+SESSION_VERSION = 3
+MEMBERSHIP_CACHE_TTL_SECONDS = 60
+OWNER_ADMIN_ROLES = frozenset({"owner", "admin"})
 ADMIN_ROLES = frozenset({"owner", "admin", "manager"})
 TEACHER_ROLES = frozenset({*ADMIN_ROLES, "teacher"})
 router = APIRouter()
+_membership_cache: dict[str, tuple[float, dict | None]] = {}
 
 
 class SessionConfigurationError(RuntimeError):
@@ -42,26 +45,12 @@ def _b64decode(value: str) -> bytes:
 
 def _session_secret() -> bytes:
     configured = session_secret()
-    if configured:
-        raw = configured.encode("utf-8")
-        if len(raw) < 32:
-            raise SessionConfigurationError("SESSION_SECRET precisa ter pelo menos 32 bytes.")
-        return hashlib.sha256(b"arte-erp-session-v1\x00" + raw).digest()
-
-    # Fallback server-side para ambientes Vercel/Neon nos quais SESSION_SECRET
-    # ainda não foi provisionado. DATABASE_URL contém credencial privada do banco,
-    # nunca é enviada ao navegador e é adequada como material secreto para derivação.
-    # SESSION_SECRET continua sendo a opção preferencial e pode ser configurada a
-    # qualquer momento; a troca apenas invalida sessões antigas.
-    db_secret_material = database_url().encode("utf-8")
-    if db_secret_material:
-        legacy = remote_sync_key().encode("utf-8")
-        context = b"arte-erp-session-neon-v1\x00"
-        if legacy:
-            return hashlib.sha256(context + legacy + b"\x00" + db_secret_material).digest()
-        return hashlib.sha256(context + db_secret_material).digest()
-
-    raise SessionConfigurationError("Segredo de sessão indisponível.")
+    if not configured:
+        raise SessionConfigurationError("SESSION_SECRET não configurado.")
+    raw = configured.encode("utf-8")
+    if len(raw) < 32:
+        raise SessionConfigurationError("SESSION_SECRET precisa ter pelo menos 32 bytes.")
+    return hashlib.sha256(b"arte-erp-session-v1\x00" + raw).digest()
 
 
 def session_configuration_ready() -> bool:
@@ -72,20 +61,21 @@ def session_configuration_ready() -> bool:
         return False
 
 
-def create_session(user_id: str, role: str, display_name: str = "") -> str:
+def create_session(user_id: str, role: str, display_name: str = "", session_version: int = 1) -> str:
     payload = {
         "sub": str(user_id),
         "role": str(role),
         "name": str(display_name or "")[:120],
         "exp": int(time.time()) + SESSION_TTL_SECONDS,
         "v": SESSION_VERSION,
+        "sv": max(1, int(session_version or 1)),
     }
     encoded = _b64encode(json.dumps(payload, separators=(",", ":"), ensure_ascii=False).encode("utf-8"))
     signature = _b64encode(hmac.new(_session_secret(), encoded.encode("ascii"), hashlib.sha256).digest())
     return f"{encoded}.{signature}"
 
 
-def session_from_request(request: Request) -> dict | None:
+def _decode_session(request: Request) -> dict | None:
     token = str(request.cookies.get(SESSION_COOKIE) or "")
     if "." not in token:
         return None
@@ -105,9 +95,47 @@ def session_from_request(request: Request) -> dict | None:
         return None
     if int(payload.get("exp") or 0) <= int(time.time()):
         return None
-    if not payload.get("sub") or not payload.get("role"):
+    if not payload.get("sub") or int(payload.get("sv") or 0) < 1:
         return None
     return payload
+
+
+def clear_membership_cache(user_id: str = "") -> None:
+    if user_id:
+        _membership_cache.pop(str(user_id), None)
+    else:
+        _membership_cache.clear()
+
+
+async def _active_membership_cached(user_id: str) -> dict | None:
+    now = time.monotonic()
+    cached = _membership_cache.get(str(user_id))
+    if cached and cached[0] > now:
+        return cached[1]
+    membership = await _active_membership(user_id)
+    _membership_cache[str(user_id)] = (now + MEMBERSHIP_CACHE_TTL_SECONDS, membership)
+    return membership
+
+
+async def session_from_request(request: Request) -> dict | None:
+    payload = _decode_session(request)
+    if not payload:
+        return None
+    try:
+        membership = await _active_membership_cached(str(payload.get("sub") or ""))
+    except MembershipLookupError:
+        return None
+    if not membership:
+        return None
+    if int(payload.get("sv") or 0) != int(membership.get("sessionVersion") or 0):
+        return None
+    return {
+        **payload,
+        "role": str(membership.get("role") or ""),
+        "name": str(membership.get("displayName") or ""),
+        "organizationId": str(membership.get("organizationId") or ""),
+        "sessionVersion": int(membership.get("sessionVersion") or 0),
+    }
 
 
 def _canonical_ip(value: str) -> str:
@@ -129,7 +157,7 @@ def _canonical_ip(value: str) -> str:
 
 
 def get_client_ip(request: Request) -> str:
-    for header in ("x-real-ip", "cf-connecting-ip"):
+    for header in ("x-real-ip", "x-forwarded-for"):
         resolved = _canonical_ip(str(request.headers.get(header) or ""))
         if resolved:
             return resolved
@@ -156,9 +184,17 @@ def same_origin_request(request: Request) -> bool:
     return hmac.compare_digest(origin.rstrip("/"), expected.rstrip("/"))
 
 
-def role_authorized(request: Request, roles: frozenset[str] = ADMIN_ROLES) -> bool:
-    session = session_from_request(request)
-    return bool(session and str(session.get("role")) in roles and same_origin_request(request))
+async def require_role(request: Request, roles: frozenset[str] = ADMIN_ROLES) -> dict | None:
+    if not same_origin_request(request):
+        return None
+    session = await session_from_request(request)
+    if not session or str(session.get("role")) not in roles:
+        return None
+    return session
+
+
+async def role_authorized(request: Request, roles: frozenset[str] = ADMIN_ROLES) -> bool:
+    return bool(await require_role(request, roles))
 
 
 async def _active_membership(user_id: str) -> dict | None:
@@ -233,7 +269,7 @@ document.getElementById("login").addEventListener("submit", async (event) => {{
 
 @router.get("/login")
 async def login(request: Request):
-    if session_from_request(request):
+    if await session_from_request(request):
         return RedirectResponse("/", status_code=303, headers={"Cache-Control": "no-store"})
     return login_page(str(request.query_params.get("next") or "/"))
 
@@ -261,7 +297,7 @@ async def api_login(request: Request):
 
     client_ip = get_client_ip(request)
     account_allowed = await consume_rate_limit(
-        f"account:{email}",
+        f"account-ip:{email}:{client_ip}",
         namespace="auth-login",
         limit=8,
         window_seconds=15 * 60,
@@ -291,7 +327,7 @@ async def api_login(request: Request):
         return JSONResponse({"ok": False, "error": "Usuário sem acesso ativo ao ERP."}, status_code=403)
 
     try:
-        token = create_session(account["userId"], account["role"], account["displayName"])
+        token = create_session(account["userId"], account["role"], account["displayName"], account["sessionVersion"])
     except SessionConfigurationError:
         return JSONResponse({"ok": False, "error": "Segredo de sessão não configurado."}, status_code=503)
     except Exception:
@@ -317,14 +353,26 @@ async def api_login(request: Request):
 async def api_logout(request: Request):
     if not same_origin_request(request):
         return JSONResponse({"ok": False, "error": "Origem inválida."}, status_code=403)
-    response = JSONResponse({"ok": True}, headers={"Cache-Control": "no-store"})
+    payload = _decode_session(request)
+    revoked = True
+    if payload and database_configured():
+        try:
+            await increment_session_version(str(payload.get("sub") or ""))
+            clear_membership_cache(str(payload.get("sub") or ""))
+        except Exception:
+            revoked = False
+    response = JSONResponse(
+        {"ok": revoked},
+        status_code=200 if revoked else 503,
+        headers={"Cache-Control": "no-store"},
+    )
     response.delete_cookie(SESSION_COOKIE, path="/", secure=True, httponly=True, samesite="strict")
     return response
 
 
 @router.get("/api/auth/session")
 async def api_session(request: Request):
-    session = session_from_request(request)
+    session = await session_from_request(request)
     if not session:
         return JSONResponse(
             {"ok": False, "authenticated": False},

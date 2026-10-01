@@ -11,6 +11,7 @@ from fastapi.responses import JSONResponse
 
 from .. import APP_VERSION
 from ..audit import capture_backup, record_audit
+from ..auth import OWNER_ADMIN_ROLES, require_role
 from ..config import database_configured, database_provider
 from ..security import sanitize_incoming_state, sync_authorized
 from ..state import database_counts, fetch_critical_state, sync_critical_state
@@ -179,7 +180,7 @@ async def compatibility_sync(request: Request):
         )
 
     body = await read_json_limited(request) if request.method == "POST" else {}
-    if not sync_authorized(request, body):
+    if not await sync_authorized(request, body):
         return response(
             {"ok": False, "error": "Autenticação obrigatória."},
             401,
@@ -236,6 +237,12 @@ async def compatibility_sync(request: Request):
         incoming = sanitize_incoming_state(raw_incoming)
         expected_etag = str(body.get("baseEtag") or "").strip()
         force = body.get("force") is True
+        if force and not await require_role(request, OWNER_ADMIN_ROLES):
+            return response(
+                {"ok": False, "error": "Permissão insuficiente para sincronização forçada."},
+                403,
+                version_header=True,
+            )
 
         if not force and expected_etag and expected_etag != current_etag:
             return response(
@@ -308,7 +315,7 @@ async def direct_supabase_sync(request: Request):
         return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
 
     body = await read_json_limited(request) if request.method == "POST" else {}
-    if not sync_authorized(request, body):
+    if not await sync_authorized(request, body):
         return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
 
     if request.method == "GET" and request.query_params.get("mode") == "status":
@@ -323,6 +330,9 @@ async def direct_supabase_sync(request: Request):
             return response({"ok": True, "data": await fetch_critical_state()})
 
         incoming = as_dict(body.get("state"))
+        deleted_request = as_dict(body.get("deleted"))
+        if any(as_list(value) for value in deleted_request.values()) and not await require_role(request, OWNER_ADMIN_ROLES):
+            return response({"ok": False, "error": "Permissão insuficiente para exclusões em sincronização."}, 403)
         current = await fetch_critical_state()
         issue = supplemental_snapshot_issue(current, incoming)
         if issue:
@@ -333,7 +343,7 @@ async def direct_supabase_sync(request: Request):
         result = await sync_critical_state(
             {
                 "state": incoming,
-                "deleted": as_dict(body.get("deleted")),
+                "deleted": deleted_request,
                 "clientId": client_id,
                 "source": body.get("source") or "admin-app",
             }
@@ -342,7 +352,7 @@ async def direct_supabase_sync(request: Request):
             request,
             "critical_state",
             "direct_sync",
-            details={"clientId": client_id, "deleted": as_dict(body.get("deleted"))},
+            details={"clientId": client_id, "deleted": deleted_request},
         )
         return response(
             {

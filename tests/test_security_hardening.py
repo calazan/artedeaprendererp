@@ -15,7 +15,7 @@ def test_dedicated_session_secret_is_documented_and_enforced():
 def test_authentication_rate_limits_are_fail_closed_and_split_by_account_and_ip():
     auth = (ROOT / "smg" / "auth.py").read_text(encoding="utf-8")
     rate_limit = (ROOT / "smg" / "preregistration.py").read_text(encoding="utf-8")
-    assert 'f"account:{email}"' in auth
+    assert 'f"account-ip:{email}:{client_ip}"' in auth
     assert 'f"ip:{client_ip}"' in auth
     assert auth.count("fail_open=False") >= 2
     assert "fail_open: bool = True" in rate_limit
@@ -54,3 +54,14 @@ def test_unexpected_http_500_responses_do_not_echo_raw_exception_text():
         assert '"error": str(exc) or' not in source, relative
         assert 'return response({"ok": False, "error": str(exc)' not in source, relative
         assert 'return json_response({"ok": False, "error": str(exc)' not in source, relative
+
+
+def test_manager_restrictions_are_enforced_in_sensitive_routes():
+    employees = (ROOT / "smg" / "routers" / "employees.py").read_text(encoding="utf-8")
+    sync = (ROOT / "smg" / "routers" / "sync.py").read_text(encoding="utf-8")
+    whatsapp = (ROOT / "smg" / "routers" / "whatsapp.py").read_text(encoding="utf-8")
+    assert "OWNER_ADMIN_ROLES" in employees
+    assert "Permissão insuficiente para excluir funcionários." in employees
+    assert "employee_documents_api" in employees and "OWNER_ADMIN_ROLES" in employees
+    assert "Permissão insuficiente para sincronização forçada." in sync
+    assert "Permissão insuficiente para alterar a configuração do WhatsApp." in whatsapp

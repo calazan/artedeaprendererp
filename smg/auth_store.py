@@ -9,6 +9,8 @@ from argon2.low_level import Type
 from .config import database_url
 from .db import connection
 
+DUMMY_PASSWORD_HASH = "$argon2id$v=19$m=65536,t=3,p=4$D5PoOIHwW06aeg2cOGkdww$wlAEMQ5DqpeQ+Va3Hu/Bepejr49b+H5bqn/4hD8U+9A"
+
 PASSWORD_HASHER = PasswordHasher(
     time_cost=3,
     memory_cost=65536,
@@ -37,8 +39,11 @@ CREATE TABLE IF NOT EXISTS public.app_users (
   active boolean NOT NULL DEFAULT true,
   created_at timestamptz NOT NULL DEFAULT now(),
   updated_at timestamptz NOT NULL DEFAULT now(),
-  last_login_at timestamptz
+  last_login_at timestamptz,
+  session_version integer NOT NULL DEFAULT 1
 );
+ALTER TABLE public.app_users
+  ADD COLUMN IF NOT EXISTS session_version integer NOT NULL DEFAULT 1;
 CREATE UNIQUE INDEX IF NOT EXISTS app_users_email_unique
   ON public.app_users(lower(email));
 
@@ -100,7 +105,8 @@ async def get_active_membership(user_id: str) -> dict | None:
                 """
                 SELECT m.role::text,
                        COALESCE(NULLIF(m.display_name,''), NULLIF(u.display_name,''), ''),
-                       m.organization_id::text
+                       m.organization_id::text,
+                       u.session_version::int
                 FROM public.organization_members m
                 JOIN public.app_users u ON u.id=m.user_id
                 JOIN public.organizations o ON o.id=m.organization_id
@@ -123,6 +129,7 @@ async def get_active_membership(user_id: str) -> dict | None:
         "role": str(row[0]),
         "displayName": str(row[1]),
         "organizationId": str(row[2]),
+        "sessionVersion": int(row[3] or 1),
     }
 
 
@@ -137,7 +144,7 @@ async def authenticate_user(email: str, password: str) -> dict | None:
                 """
                 SELECT u.id::text, u.password_hash,
                        COALESCE(NULLIF(m.display_name,''), NULLIF(u.display_name,''), ''),
-                       m.role::text, m.organization_id::text
+                       m.role::text, m.organization_id::text, u.session_version::int
                 FROM public.app_users u
                 JOIN public.organization_members m ON m.user_id=u.id
                 JOIN public.organizations o ON o.id=m.organization_id
@@ -154,7 +161,10 @@ async def authenticate_user(email: str, password: str) -> dict | None:
                 (clean_email,),
             )
             row = await cur.fetchone()
-            if not row or not verify_password_hash(str(row[1]), password):
+            if not row:
+                verify_password_hash(DUMMY_PASSWORD_HASH, password)
+                return None
+            if not verify_password_hash(str(row[1]), password):
                 return None
 
             user_id = str(row[0])
@@ -172,6 +182,7 @@ async def authenticate_user(email: str, password: str) -> dict | None:
         "displayName": str(row[2]),
         "role": str(row[3]),
         "organizationId": str(row[4]),
+        "sessionVersion": int(row[5] or 1),
     }
 
 
@@ -239,7 +250,8 @@ async def bootstrap_user(
                         await cur.execute(
                             """
                             UPDATE public.app_users
-                            SET password_hash=%s,display_name=%s,active=true,updated_at=now()
+                            SET password_hash=%s,display_name=%s,active=true,
+                                session_version=session_version+1,updated_at=now()
                             WHERE id=%s::uuid
                             """,
                             (new_hash, display_name, user_id),
@@ -275,3 +287,47 @@ async def bootstrap_user(
         "email": clean_email,
         "role": role,
     }
+
+
+async def increment_session_version(user_id: str) -> int | None:
+    if not user_id or not database_url():
+        return None
+    await ensure_auth_schema()
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                UPDATE public.app_users
+                SET session_version=session_version+1,updated_at=now()
+                WHERE id=%s::uuid
+                RETURNING session_version
+                """,
+                (user_id,),
+            )
+            row = await cur.fetchone()
+    return int(row[0]) if row else None
+
+
+async def set_user_active(user_id: str, active: bool) -> bool:
+    if not user_id or not database_url():
+        return False
+    await ensure_auth_schema()
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            if active:
+                await cur.execute(
+                    "UPDATE public.app_users SET active=true,updated_at=now() WHERE id=%s::uuid RETURNING id",
+                    (user_id,),
+                )
+            else:
+                await cur.execute(
+                    """
+                    UPDATE public.app_users
+                    SET active=false,session_version=session_version+1,updated_at=now()
+                    WHERE id=%s::uuid
+                    RETURNING id
+                    """,
+                    (user_id,),
+                )
+            row = await cur.fetchone()
+    return bool(row)

@@ -18,7 +18,7 @@ from ..employees import (
     save_employee_document,
     sync_employees,
 )
-from ..security import legacy_internal_authorized
+from ..auth import ADMIN_ROLES, OWNER_ADMIN_ROLES, require_role
 
 logger = logging.getLogger("smg.routers.employees")
 INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
@@ -56,16 +56,20 @@ def safe_filename(value="arquivo"):
 
 @router.api_route("/api/employees", methods=["GET", "POST"])
 async def employees_api(request: Request):
-    if not legacy_internal_authorized(request):
-        return json_response({"ok": False, "error": "Chave interna inválida."}, 401)
+    session = await require_role(request, ADMIN_ROLES)
+    if not session:
+        return json_response({"ok": False, "error": "Autenticação obrigatória."}, 401)
     try:
         if request.method == "GET":
             employees = await list_employees()
             return json_response({"ok": True, "employees": employees, "count": len(employees)})
         body = await body_json(request, 4 * 1024 * 1024)
+        deleted_ids = body.get("deletedIds") if isinstance(body.get("deletedIds"), list) else []
+        if deleted_ids and str(session.get("role")) not in OWNER_ADMIN_ROLES:
+            return json_response({"ok": False, "error": "Permissão insuficiente para excluir funcionários."}, 403)
         result = await sync_employees(
             body.get("employees") if isinstance(body.get("employees"), list) else [],
-            body.get("deletedIds") if isinstance(body.get("deletedIds"), list) else [],
+            deleted_ids,
         )
         return json_response({"ok": True, **result})
     except Exception:
@@ -75,8 +79,8 @@ async def employees_api(request: Request):
 
 @router.api_route("/api/employee-documents", methods=["GET", "POST", "DELETE"])
 async def employee_documents_api(request: Request):
-    if not legacy_internal_authorized(request):
-        return json_response({"ok": False, "error": "Chave interna inválida."}, 401)
+    if not await require_role(request, OWNER_ADMIN_ROLES):
+        return json_response({"ok": False, "error": "Permissão insuficiente."}, 403)
     try:
         if request.method == "GET":
             document_id = text(request.query_params.get("id"), 120)
