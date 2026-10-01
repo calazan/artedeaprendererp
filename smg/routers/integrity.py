@@ -4,9 +4,11 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..auth import ADMIN_ROLES, role_authorized
-from ..config import EXPECTED_SUPABASE_REF, database_project_ref
+from ..auth_store import ensure_auth_schema
+from ..config import database_configured, database_provider
 from ..db import connection
-from ..state import database_counts
+from ..domains import ensure_domain_schema
+from ..state import database_counts, ensure_core_schema
 
 router = APIRouter(prefix="/api")
 
@@ -23,6 +25,12 @@ def response(payload: dict, status: int = 200) -> JSONResponse:
 async def integrity(request: Request):
     if not role_authorized(request, ADMIN_ROLES):
         return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
+    if not database_configured():
+        return response({"ok": False, "error": "Banco PostgreSQL não configurado."}, 503)
+
+    await ensure_core_schema()
+    await ensure_domain_schema()
+    await ensure_auth_schema()
 
     async with connection() as conn:
         async with conn.cursor() as cur:
@@ -59,12 +67,7 @@ async def integrity(request: Request):
 
             await cur.execute(
                 """
-                SELECT
-                  count(*) FILTER (WHERE NOT c.relrowsecurity)::int AS without_rls,
-                  count(*) FILTER (
-                    WHERE has_table_privilege('anon',format('public.%I',c.relname),'INSERT,UPDATE,DELETE')
-                       OR has_table_privilege('authenticated',format('public.%I',c.relname),'INSERT,UPDATE,DELETE')
-                  )::int AS client_write_grants
+                SELECT count(*) FILTER (WHERE NOT c.relrowsecurity)::int
                 FROM pg_class c
                 JOIN pg_namespace n ON n.oid=c.relnamespace
                 WHERE n.nspname='public' AND c.relkind='r' AND c.relname LIKE 'smg_%'
@@ -75,9 +78,10 @@ async def integrity(request: Request):
             await cur.execute(
                 """
                 SELECT
-                  EXISTS(SELECT 1 FROM information_schema.tables WHERE table_schema='public' AND table_name='smg_manual_backups'),
-                  COALESCE((SELECT position('supabase.co/functions/v1' in pg_get_functiondef('public.dart20_dispatch_task_push()'::regprocedure))>0),false),
-                  COALESCE((SELECT position('supabase.co/functions/v1' in pg_get_functiondef('public.dart_dispatch_whatsapp()'::regprocedure))>0),false)
+                  to_regclass('public.app_users') IS NOT NULL,
+                  to_regclass('public.organizations') IS NOT NULL,
+                  to_regclass('public.organization_members') IS NOT NULL,
+                  to_regclass('public.smg_manual_backups') IS NOT NULL
                 """
             )
             runtime_row = await cur.fetchone()
@@ -90,16 +94,15 @@ async def integrity(request: Request):
         "recentHistoricalAttendanceWithoutStudent": int(row[6] or 0),
         "smgTablesWithoutRls": int(security_row[0] or 0),
     }
-    project_ref = database_project_ref()
-    project_matched = not project_ref or project_ref == EXPECTED_SUPABASE_REF
-    critical_ok = all(value == 0 for value in critical_issues.values()) and project_matched
+    auth_ready = bool(runtime_row[0] and runtime_row[1] and runtime_row[2])
+    critical_ok = all(value == 0 for value in critical_issues.values()) and auth_ready
 
     return response(
         {
             "ok": critical_ok,
             "database": {
-                "expectedProject": EXPECTED_SUPABASE_REF,
-                "projectMatched": project_matched,
+                "configured": True,
+                "provider": database_provider(),
                 "counts": await database_counts(),
                 "activeDomainRecords": int(row[7] or 0),
             },
@@ -111,12 +114,11 @@ async def integrity(request: Request):
             },
             "security": {
                 "smgTablesWithoutRls": int(security_row[0] or 0),
-                "smgTablesWithClientWriteGrants": int(security_row[1] or 0),
+                "backendOnlyDatabaseAccess": True,
             },
             "runtime": {
-                "manualBackupTableReady": bool(runtime_row[0]),
-                "taskCronStillTargetsEdgeFunction": bool(runtime_row[1]),
-                "whatsappCronStillTargetsEdgeFunction": bool(runtime_row[2]),
+                "authTablesReady": auth_ready,
+                "manualBackupTableReady": bool(runtime_row[3]),
             },
         }
     )

@@ -312,7 +312,7 @@ async def tasks_handler(request: Request, *, force_push: bool = False):
 
         if request.method == "GET":
             result = await list_tasks(include_deleted=True)
-            return response({"ok": True, **result, "provider": "supabase"})
+            return response({"ok": True, **result, "provider": "neon-postgres"})
 
         if request.method == "DELETE" or body.get("action") == "delete":
             task_id = str(body.get("id") or "").strip()

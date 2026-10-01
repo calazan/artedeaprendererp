@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from smg import APP_VERSION
 from smg.app import app
 from smg.auth import ADMIN_ROLES, TEACHER_ROLES, login_redirect, role_authorized
-from smg.config import environment_status, frontend_dir, supabase_configured, whatsapp_provider_config
+from smg.config import database_configured, database_provider, environment_status, frontend_dir, whatsapp_provider_config
 
 FRONTEND_ROOT = frontend_dir()
 
@@ -20,9 +20,9 @@ async def runtime_mode():
     return JSONResponse(
         {
             "ok": True,
-            "mode": "python-direct" if supabase_configured() else "python-not-ready",
+            "mode": "python-direct" if database_configured() else "python-not-ready",
             "pythonFastApi": True,
-            "databaseDirect": bool(supabase_configured()),
+            "databaseDirect": bool(database_configured()),\n            "databaseProvider": database_provider(),
             "compatibilityProxy": False,
             "frontendMode": "python-owned-bundled-ui",
             "externalFrontend": False,
@@ -44,8 +44,8 @@ async def environment_diagnostic(request: Request):
         {
             "ok": True,
             "version": APP_VERSION,
-            "mode": "python-direct" if supabase_configured() else "python-not-ready",
-            "databaseConfigured": bool(supabase_configured()),
+            "mode": "python-direct" if database_configured() else "python-not-ready",
+            "databaseConfigured": bool(database_configured()),\n            "databaseProvider": database_provider(),
             "databaseEnvironment": environment_status(),
             "frontendMode": "python-owned-bundled-ui",
             "externalFrontendConfigured": False,

@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 
 from .. import APP_VERSION
 from ..audit import capture_backup, record_audit
-from ..config import supabase_configured
+from ..config import database_configured, database_provider
 from ..security import sanitize_incoming_state, sync_authorized
 from ..state import database_counts, fetch_critical_state, sync_critical_state
 from ..utils import as_dict, as_list
@@ -159,7 +159,7 @@ def suspicious_snapshot_response(issue: dict, *, version_header: bool = False) -
             "version": APP_VERSION,
             "error": (
                 "O envio foi bloqueado porque o snapshot parece incompleto ou zeraria "
-                "dados financeiros existentes. Baixe a versão mais recente do Supabase "
+                "dados financeiros existentes. Baixe a versão mais recente do Neon "
                 "antes de tentar sincronizar novamente."
             ),
             "blockedDomains": list(issue.get("domains") or []),
@@ -171,9 +171,9 @@ def suspicious_snapshot_response(issue: dict, *, version_header: bool = False) -
 
 @router.api_route("/api/sync", methods=["GET", "POST"])
 async def compatibility_sync(request: Request):
-    if not supabase_configured():
+    if not database_configured():
         return response(
-            {"ok": False, "error": "Supabase ainda não configurado no ambiente Production."},
+            {"ok": False, "error": "Neon ainda não configurado no ambiente Production."},
             503,
             version_header=True,
         )
@@ -204,7 +204,7 @@ async def compatibility_sync(request: Request):
                         "notModified": True,
                         "etag": current_etag,
                         "version": APP_VERSION,
-                        "storageAuth": "supabase-postgres",
+                        "storageAuth": database_provider(),
                     },
                     version_header=True,
                 )
@@ -219,8 +219,8 @@ async def compatibility_sync(request: Request):
                     "eventRosterRevision": rev,
                     "etag": current_etag,
                     "version": APP_VERSION,
-                    "storageAuth": "supabase-postgres",
-                    "provider": "supabase",
+                    "storageAuth": database_provider(),
+                    "provider": database_provider(),
                     "backup": current,
                 },
                 version_header=True,
@@ -243,7 +243,7 @@ async def compatibility_sync(request: Request):
                     "ok": False,
                     "code": "REMOTE_CONFLICT",
                     "version": APP_VERSION,
-                    "error": "Os dados do Supabase foram alterados em outro computador. Baixe a versão mais recente antes de enviar novamente.",
+                    "error": "Os dados do Neon foram alterados em outro computador. Baixe a versão mais recente antes de enviar novamente.",
                 },
                 409,
                 version_header=True,
@@ -261,7 +261,7 @@ async def compatibility_sync(request: Request):
                 "state": incoming,
                 "deleted": deleted,
                 "clientId": client_id,
-                "source": "legacy-sync-force-supabase" if force else "legacy-sync-compat-supabase",
+                "source": "legacy-sync-force-postgres" if force else "legacy-sync-compat-postgres",
             }
         )
         updated = await fetch_critical_state()
@@ -281,8 +281,8 @@ async def compatibility_sync(request: Request):
                 "teacherAttendanceRevision": rev,
                 "eventRosterRevision": rev,
                 "etag": state_etag(updated),
-                "storageAuth": "supabase-postgres",
-                "provider": "supabase",
+                "storageAuth": database_provider(),
+                "provider": database_provider(),
                 "version": APP_VERSION,
                 "attendance": as_dict(updated.get("attendance")),
             },
@@ -304,8 +304,8 @@ async def compatibility_sync(request: Request):
 
 @router.api_route("/api/supabase-sync", methods=["GET", "POST"])
 async def direct_supabase_sync(request: Request):
-    if not supabase_configured():
-        return response({"ok": False, "error": "Supabase ainda não configurado no ambiente Production."}, 503)
+    if not database_configured():
+        return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
 
     body = await read_json_limited(request) if request.method == "POST" else {}
     if not sync_authorized(request, body):

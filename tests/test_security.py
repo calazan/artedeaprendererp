@@ -14,22 +14,16 @@ from smg.auth import (
     role_authorized,
     session_from_request,
 )
-from smg.config import (
-    DEFAULT_PUBLISHABLE_KEY,
-    DEFAULT_SUPABASE_URL,
-    database_project_ref,
-    publishable_key,
-    supabase_url,
-)
+from smg.config import database_configured, database_provider, database_url
 from smg.preregistration import consume_rate_limit
 from smg.routers.sync import supplemental_snapshot_issue
 
 
 DB_ENV_NAMES = (
-    "POSTGRES_PRISMA_URL",
+    "DATABASE_URL",
     "POSTGRES_URL",
+    "POSTGRES_PRISMA_URL",
     "POSTGRES_URL_NON_POOLING",
-    "SUPABASE_DB_URL",
 )
 
 
@@ -77,7 +71,7 @@ def test_signed_session_accepts_valid_and_rejects_tampering(monkeypatch):
 def test_weak_dedicated_session_secret_is_rejected(monkeypatch):
     monkeypatch.setenv("SESSION_SECRET", "too-short")
     monkeypatch.setenv("REMOTE_SYNC_KEY", "x" * 64)
-    monkeypatch.setenv("POSTGRES_URL", "postgresql://user:strong-db-secret@db.example/postgres")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:strong-db-secret@ep-example.neon.tech/neondb?sslmode=require")
     with pytest.raises(SessionConfigurationError):
         create_session("00000000-0000-0000-0000-000000000001", "owner")
 
@@ -93,7 +87,7 @@ def test_predictable_session_fallback_is_not_allowed(monkeypatch):
 def test_server_side_compat_session_key_is_accepted_during_migration(monkeypatch):
     monkeypatch.delenv("SESSION_SECRET", raising=False)
     monkeypatch.setenv("REMOTE_SYNC_KEY", "x" * 64)
-    monkeypatch.setenv("POSTGRES_URL", "postgresql://user:strong-db-secret@db.example/postgres")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://user:strong-db-secret@ep-example.neon.tech/neondb?sslmode=require")
     token = create_session("00000000-0000-0000-0000-000000000001", "owner")
     assert session_from_request(request_with_cookie(token))["role"] == "owner"
 
@@ -106,10 +100,7 @@ def test_cross_origin_mutation_is_rejected(monkeypatch):
 
 
 def test_arbitrary_x_forwarded_for_does_not_override_socket_ip():
-    request = request_with_cookie(
-        "",
-        extra_headers=[(b"x-forwarded-for", b"203.0.113.99")],
-    )
+    request = request_with_cookie("", extra_headers=[(b"x-forwarded-for", b"203.0.113.99")])
     assert get_client_ip(request) == "127.0.0.1"
 
 
@@ -125,27 +116,18 @@ def test_rate_limit_can_fail_closed_for_security_sensitive_flows(monkeypatch):
     assert asyncio.run(consume_rate_limit("public-default")) is True
 
 
-def test_invalid_or_foreign_supabase_auth_target_falls_back_to_audited_host(monkeypatch):
-    monkeypatch.setenv("SUPABASE_URL", "https://evil.example")
-    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "attacker-controlled-key")
-    assert supabase_url() == DEFAULT_SUPABASE_URL
-    assert publishable_key() == DEFAULT_PUBLISHABLE_KEY
-
-    monkeypatch.setenv("SUPABASE_URL", "javascript:alert(1)")
-    assert supabase_url() == DEFAULT_SUPABASE_URL
-    assert publishable_key() == DEFAULT_PUBLISHABLE_KEY
-
-
-def test_audited_supabase_auth_target_accepts_configured_publishable_key(monkeypatch):
-    monkeypatch.setenv("SUPABASE_URL", DEFAULT_SUPABASE_URL)
-    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "configured-publishable-key")
-    assert supabase_url() == DEFAULT_SUPABASE_URL
-    assert publishable_key() == "configured-publishable-key"
-
-
-def test_supabase_project_ref_is_extracted_from_pooler_username():
-    url = "postgresql://postgres.your-project-ref:secret@aws-0-sa-east-1.pooler.supabase.com:6543/postgres"
-    assert database_project_ref(url) == "your-project-ref"
+def test_neon_database_url_is_primary_and_keeps_tls(monkeypatch):
+    clear_database_env(monkeypatch)
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgres://owner:secret@ep-example-pooler.us-east-2.aws.neon.tech/neondb?sslmode=require&channel_binding=require",
+    )
+    value = database_url()
+    assert value.startswith("postgresql://")
+    assert "sslmode=require" in value
+    assert "channel_binding=require" in value
+    assert database_configured()
+    assert database_provider() == "neon-postgres"
 
 
 def test_incomplete_financial_snapshot_is_blocked():

@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from .. import APP_VERSION
 from ..auth import TEACHER_ROLES, role_authorized
 from ..audit import record_audit
-from ..config import supabase_configured
+from ..config import database_configured, database_provider
 from ..state import fetch_critical_state, save_attendance_records, teacher_public_state
 from ..utils import iso_now
 
@@ -34,8 +34,8 @@ def response(data: dict, status: int = 200):
 async def handler(request: Request):
     if not role_authorized(request, TEACHER_ROLES):
         return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
-    if not supabase_configured():
-        return response({"ok": False, "error": "Supabase ainda não configurado no ambiente Production."}, 503)
+    if not database_configured():
+        return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
     try:
         if request.method == "POST":
             raw = await request.body()
@@ -73,7 +73,7 @@ async def handler(request: Request):
             {
                 "ok": True,
                 "exists": len(data["students"]) > 0,
-                "provider": "supabase",
+                "provider": database_provider(),
                 "updatedAt": data.get("updatedAt") or iso_now(),
                 "data": data,
             }

@@ -107,7 +107,7 @@ def normalize_attendance_record(record: Any) -> dict:
         "checkOut": str(item.get("checkOut") or ""),
         "hours": float(item.get("hours") or 0),
         "updatedAt": str(item.get("updatedAt") or iso_now()),
-        "source": str(item.get("source") or "supabase"),
+        "source": str(item.get("source") or "neon-postgres"),
     }
 
 
@@ -456,7 +456,7 @@ async def save_attendance_records(day: str, records: dict) -> dict:
             {
                 **as_dict(record),
                 "updatedAt": now,
-                "source": "teacher-page-supabase",
+                "source": "teacher-page-neon",
             }
         )
         rows.append((day, str(student_id), normalized))
@@ -481,7 +481,7 @@ async def save_attendance_records(day: str, records: dict) -> dict:
                     VALUES ('critical_state',%s,now())
                     ON CONFLICT (key) DO UPDATE SET value=EXCLUDED.value,updated_at=now()
                     """,
-                    (Jsonb({"updatedAt": now, "source": "teacher-page-supabase"}),),
+                    (Jsonb({"updatedAt": now, "source": "teacher-page-neon"}),),
                 )
     return {"updatedAt": now}
 

@@ -7,7 +7,8 @@ from fastapi.responses import JSONResponse
 
 from .. import APP_VERSION
 from ..auth import TEACHER_ROLES, role_authorized
-from ..config import environment_status, remote_sync_key, supabase_configured
+from ..auth_store import ensure_auth_schema
+from ..config import database_configured, database_provider, environment_status, remote_sync_key
 from ..state import database_counts, ensure_core_schema
 
 logger = logging.getLogger("smg.routers.health")
@@ -31,34 +32,36 @@ def payload(extra: dict, status: int = 200):
 def compatibility_payload() -> dict:
     return {
         "remoteSyncKeyConfigured": bool(remote_sync_key()),
-        "blob": {
-            "connected": True,
-            "provider": "supabase-postgres",
-            "access": {"tested": False, "ok": True},
+        "storage": {
+            "connected": database_configured(),
+            "provider": database_provider(),
+            "access": {"tested": False, "ok": database_configured()},
         },
     }
 
 
 async def _health(*, detailed: bool = False):
-    if not supabase_configured():
+    if not database_configured():
         return payload(
             {
                 "ok": False,
                 "configured": False,
                 **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
-                "error": "A integração Supabase ainda não disponibilizou uma URL PostgreSQL no ambiente Production.",
+                "error": "DATABASE_URL do Neon/PostgreSQL ainda não está disponível no ambiente Production.",
             },
             503,
         )
     try:
         await ensure_core_schema()
+        await ensure_auth_schema()
         counts = await database_counts()
         return payload(
             {
                 "ok": True,
                 "configured": True,
                 "schemaReady": True,
-                "provider": "supabase-postgres",
+                "authSchemaReady": True,
+                "provider": database_provider(),
                 **({"counts": counts, "environment": environment_status(), **compatibility_payload()} if detailed else {}),
             }
         )
@@ -67,7 +70,7 @@ async def _health(*, detailed: bool = False):
         return payload(
             {
                 "ok": False,
-                "configured": supabase_configured(),
+                "configured": database_configured(),
                 "schemaReady": False,
                 **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
                 "error": INTERNAL_ERROR_MESSAGE,
@@ -81,8 +84,10 @@ async def health():
     return await _health(detailed=False)
 
 
+@router.get("/api/database-health")
+@router.get("/api/neon-health")
 @router.get("/api/supabase-health")
-async def supabase_health(request: Request):
+async def database_health(request: Request):
     if not role_authorized(request, TEACHER_ROLES):
         return payload({"ok": False, "error": "Autenticação obrigatória."}, 401)
     return await _health(detailed=True)
