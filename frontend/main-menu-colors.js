@@ -40,8 +40,8 @@
       color: #ffffff !important;
     }
 
-    .tabs.menu-final-v414 .tab[data-view="employees"] { background: linear-gradient(135deg, #a66bd1, #7d49aa) !important; }
-    .tabs.menu-final-v414 .tab[data-view="employees"].is-active { background: linear-gradient(135deg, #9253bc, #67388f) !important; }
+    .tabs.menu-final-v414 .tab[data-view="employees"] { background: linear-gradient(135deg, #59cfc2, #2f9d91) !important; }
+    .tabs.menu-final-v414 .tab[data-view="employees"].is-active { background: linear-gradient(135deg, #3fb9ad, #247b72) !important; }
 
     .tabs.menu-final-v414 .tab[data-view="students"] { background: linear-gradient(135deg, #fa6c9f, #e83c76) !important; }
     .tabs.menu-final-v414 .tab[data-view="students"].is-active { background: linear-gradient(135deg, #ef477e, #c92e68) !important; }
@@ -62,10 +62,10 @@
     .tabs.menu-final-v414 .tab[data-view="proposals"].is-active { background: linear-gradient(135deg, #4bc6c4, #2b9296) !important; }
 
     .tabs.menu-final-v414 .tab[data-view="preRegistrations"] {
-      background: linear-gradient(135deg, #f783ad, #df4c88) !important;
+      background: linear-gradient(135deg, #c985dc, #9951ba) !important;
       color: #ffffff !important;
     }
-    .tabs.menu-final-v414 .tab[data-view="preRegistrations"].is-active { background: linear-gradient(135deg, #eb5a92, #c93673) !important; }
+    .tabs.menu-final-v414 .tab[data-view="preRegistrations"].is-active { background: linear-gradient(135deg, #ad68ca, #783b9d) !important; }
 
     .tabs.menu-final-v414 .tab[data-view="settings"] { background: linear-gradient(135deg, #7b3f91, #552663) !important; }
     .tabs.menu-final-v414 .tab[data-view="settings"].is-active { background: linear-gradient(135deg, #682f7c, #431b54) !important; }

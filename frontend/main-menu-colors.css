@@ -20,8 +20,8 @@
 .tabs.menu-final-v414 .tab[data-view="dashboard"].is-active{background:linear-gradient(135deg,#76008a,#56006b)!important}
 .tabs.menu-final-v414 .tab[data-view="finance"]{background:linear-gradient(135deg,#f7d54d,#e8aa14)!important;color:#523600!important;text-shadow:none}
 .tabs.menu-final-v414 .tab[data-view="finance"].is-active{background:linear-gradient(135deg,#f3c524,#d39700)!important;color:#fff!important}
-.tabs.menu-final-v414 .tab[data-view="employees"]{background:linear-gradient(135deg,#a66bd1,#7d49aa)!important}
-.tabs.menu-final-v414 .tab[data-view="employees"].is-active{background:linear-gradient(135deg,#9253bc,#67388f)!important}
+.tabs.menu-final-v414 .tab[data-view="employees"]{background:linear-gradient(135deg,#59cfc2,#2f9d91)!important}
+.tabs.menu-final-v414 .tab[data-view="employees"].is-active{background:linear-gradient(135deg,#3fb9ad,#247b72)!important}
 .tabs.menu-final-v414 .tab[data-view="students"]{background:linear-gradient(135deg,#fa6c9f,#e83c76)!important}
 .tabs.menu-final-v414 .tab[data-view="students"].is-active{background:linear-gradient(135deg,#ef477e,#c92e68)!important}
 .tabs.menu-final-v414 .tab[data-view="attendance"]{background:linear-gradient(135deg,#42c9e5,#199bbb)!important}
@@ -34,8 +34,8 @@
 .tabs.menu-final-v414 .tab[data-view="reports"].is-active{background:linear-gradient(135deg,#8d50b2,#65378c)!important}
 .tabs.menu-final-v414 .tab[data-view="proposals"]{background:linear-gradient(135deg,#69d7d4,#3aabad)!important}
 .tabs.menu-final-v414 .tab[data-view="proposals"].is-active{background:linear-gradient(135deg,#4bc6c4,#2b9296)!important}
-.tabs.menu-final-v414 .tab[data-view="preRegistrations"]{background:linear-gradient(135deg,#f783ad,#df4c88)!important;color:#fff!important}
-.tabs.menu-final-v414 .tab[data-view="preRegistrations"].is-active{background:linear-gradient(135deg,#eb5a92,#c93673)!important}
+.tabs.menu-final-v414 .tab[data-view="preRegistrations"]{background:linear-gradient(135deg,#c985dc,#9951ba)!important;color:#fff!important}
+.tabs.menu-final-v414 .tab[data-view="preRegistrations"].is-active{background:linear-gradient(135deg,#ad68ca,#783b9d)!important}
 .tabs.menu-final-v414 .tab[data-view="settings"]{background:linear-gradient(135deg,#7b3f91,#552663)!important}
 .tabs.menu-final-v414 .tab[data-view="settings"].is-active{background:linear-gradient(135deg,#682f7c,#431b54)!important}
 .tabs.menu-final-v414 .teacher-tab-link{background:linear-gradient(135deg,#51ceb0,#309a85)!important;color:#fff!important;text-decoration:none!important}

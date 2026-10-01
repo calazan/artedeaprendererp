@@ -8,14 +8,14 @@
   const MAIN_DEFAULTS = {
     dashboard: "#76008a",
     finance: "#f3c524",
-    employees: "#9253bc",
+    employees: "#3fb9ad",
     students: "#ef477e",
     attendance: "#24b9d8",
     extraEvents: "#f5b92b",
     agenda: "#43c9a8",
     reports: "#8d50b2",
     proposals: "#4bc6c4",
-    preRegistrations: "#eb5a92",
+    preRegistrations: "#ad68ca",
     settings: "#682f7c",
     teacherAttendance: "#309a85",
   };

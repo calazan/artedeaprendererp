@@ -32,36 +32,6 @@
     });
   }
 
-  function loadRentalIndividualReports() {
-    if (window.__saberRentalIndividualReportsLoaded) return;
-    appendScript({
-      selector: 'script[data-rental-individual-reports]',
-      src: "rental-individual-reports.js?v=1",
-      datasetKey: "rentalIndividualReports",
-      errorMessage: "Não foi possível carregar os relatórios individuais de locações e repasses.",
-    });
-  }
-
-  function loadRentalsMainHub() {
-    if (window.__saberRentalsMainHubLoaded) return;
-    appendScript({
-      selector: 'script[data-rentals-main-hub]',
-      src: "rentals-main-hub.js?v=1",
-      datasetKey: "rentalsMainHub",
-      errorMessage: "Não foi possível carregar a central de locações e repasses.",
-    });
-  }
-
-  function loadRentalReceivablesControl() {
-    if (window.__saberRentalReceivablesControlLoaded) return;
-    appendScript({
-      selector: 'script[data-rental-receivables-control]',
-      src: "rental-receivables-control.js?v=1",
-      datasetKey: "rentalReceivablesControl",
-      errorMessage: "Não foi possível carregar o controle de contas a receber das locações.",
-    });
-  }
-
   function loadCashFlowStatusFilter() {
     if (window.__saberCashFlowStatusFilterLoaded) return;
     appendScript({
@@ -166,9 +136,6 @@
 
   hideLegacyRemoteCard();
   loadSupabaseSync();
-  loadRentalIndividualReports();
-  loadRentalsMainHub();
-  loadRentalReceivablesControl();
   loadCashFlowStatusFilter();
   loadTasksRoutine();
   loadDashboardRedesign();
