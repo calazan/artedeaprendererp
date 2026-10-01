@@ -1,0 +1,7 @@
+title = "Arte de Aprender ERP gitleaks configuration"
+
+[allowlist]
+description = "Browser storage namespace literals are identifiers, not credentials."
+regexes = [
+  '''arteDeAprenderERP\.v4'''
+]

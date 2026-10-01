@@ -84,11 +84,27 @@ def normalize_id(value: Any = "") -> str:
 async def list_records(resource: str, *, include_deleted: bool = False, limit: int = 1000) -> list[dict]:
     resource = normalize_resource(resource)
     await ensure_domain_schema()
-    where = "resource_type=%s" + ("" if include_deleted else " AND deleted_at IS NULL")
     async with connection() as conn:
         async with conn.cursor() as cur:
+            query = (
+                """
+                SELECT id,data,version,created_at,updated_at,deleted_at
+                FROM public.smg_domain_records
+                WHERE resource_type=%s
+                ORDER BY updated_at DESC
+                LIMIT %s
+                """
+                if include_deleted
+                else """
+                SELECT id,data,version,created_at,updated_at,deleted_at
+                FROM public.smg_domain_records
+                WHERE resource_type=%s AND deleted_at IS NULL
+                ORDER BY updated_at DESC
+                LIMIT %s
+                """
+            )
             await cur.execute(
-                f"SELECT id,data,version,created_at,updated_at,deleted_at FROM public.smg_domain_records WHERE {where} ORDER BY updated_at DESC LIMIT %s",
+                query,
                 (resource, max(1, min(int(limit), 5000))),
             )
             rows = await cur.fetchall()
@@ -174,18 +190,28 @@ async def save_record(resource: str, data: dict, *, expected_version: int | None
 async def delete_record(resource: str, record_id: str, *, expected_version: int | None = None) -> bool:
     resource, record_id = normalize_resource(resource), normalize_id(record_id)
     await ensure_domain_schema()
-    condition = "" if expected_version is None else " AND version=%s"
-    values: tuple = (
-        (resource, record_id)
-        if expected_version is None
-        else (resource, record_id, int(expected_version))
-    )
     async with connection() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                f"UPDATE public.smg_domain_records SET deleted_at=now(),version=version+1,updated_at=now() WHERE resource_type=%s AND id=%s AND deleted_at IS NULL{condition} RETURNING id",
-                values,
-            )
+            if expected_version is None:
+                await cur.execute(
+                    """
+                    UPDATE public.smg_domain_records
+                    SET deleted_at=now(),version=version+1,updated_at=now()
+                    WHERE resource_type=%s AND id=%s AND deleted_at IS NULL
+                    RETURNING id
+                    """,
+                    (resource, record_id),
+                )
+            else:
+                await cur.execute(
+                    """
+                    UPDATE public.smg_domain_records
+                    SET deleted_at=now(),version=version+1,updated_at=now()
+                    WHERE resource_type=%s AND id=%s AND deleted_at IS NULL AND version=%s
+                    RETURNING id
+                    """,
+                    (resource, record_id, int(expected_version)),
+                )
             return (await cur.fetchone()) is not None
 
 

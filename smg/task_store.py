@@ -128,17 +128,23 @@ def clean_task(task: Any) -> dict:
 
 async def list_tasks(*, include_deleted: bool = True) -> dict:
     await ensure_task_schema()
-    where = "" if include_deleted else "WHERE deleted_at IS NULL"
     async with connection() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                f"""
+            query = (
+                """
                 SELECT id, data, deleted_at, updated_at
                 FROM public.smg_tasks
-                {where}
+                ORDER BY updated_at DESC, id
+                """
+                if include_deleted
+                else """
+                SELECT id, data, deleted_at, updated_at
+                FROM public.smg_tasks
+                WHERE deleted_at IS NULL
                 ORDER BY updated_at DESC, id
                 """
             )
+            await cur.execute(query)
             rows = await cur.fetchall()
     tasks, deleted_ids = [], []
     for row_id, data, deleted_at, _updated in rows:

@@ -7,6 +7,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Any
 
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .db import connection
@@ -171,37 +172,61 @@ def supplemental_state(state: dict) -> dict:
     return result
 
 
+ENTITY_TABLES = frozenset({
+    "smg_students",
+    "smg_activities",
+    "smg_extra_events",
+    "smg_extra_participants",
+})
+
+
+def _entity_table_identifier(table: str):
+    if table not in ENTITY_TABLES:
+        raise StateValidationError("Tabela interna inválida.")
+    return sql.Identifier(table)
+
+
 async def _upsert_entity_rows(cur, table: str, rows: list[dict], has_status: bool = False, event_id: bool = False) -> None:
     if not rows:
         return
+    table_id = _entity_table_identifier(table)
     if has_status:
-        await cur.executemany(
-            f"""
-            INSERT INTO public.{table}(id, data, status, updated_at)
+        query = sql.SQL(
+            """
+            INSERT INTO public.{}(id, data, status, updated_at)
             VALUES (%s, %s, %s, now())
             ON CONFLICT (id) DO UPDATE
             SET data = EXCLUDED.data, status = EXCLUDED.status, updated_at = now()
-            """,
+            """
+        ).format(table_id)
+        await cur.executemany(
+            query,
             [(r["id"], Jsonb(r["data"]), r["status"]) for r in rows],
         )
     elif event_id:
-        await cur.executemany(
-            f"""
-            INSERT INTO public.{table}(id, event_id, data, updated_at)
+        query = sql.SQL(
+            """
+            INSERT INTO public.{}(id, event_id, data, updated_at)
             VALUES (%s, %s, %s, now())
             ON CONFLICT (id) DO UPDATE
             SET event_id = EXCLUDED.event_id, data = EXCLUDED.data, updated_at = now()
-            """,
+            """
+        ).format(table_id)
+        await cur.executemany(
+            query,
             [(r["id"], r["event_id"], Jsonb(r["data"])) for r in rows],
         )
     else:
-        await cur.executemany(
-            f"""
-            INSERT INTO public.{table}(id, data, updated_at)
+        query = sql.SQL(
+            """
+            INSERT INTO public.{}(id, data, updated_at)
             VALUES (%s, %s, now())
             ON CONFLICT (id) DO UPDATE
             SET data = EXCLUDED.data, updated_at = now()
-            """,
+            """
+        ).format(table_id)
+        await cur.executemany(
+            query,
             [(r["id"], Jsonb(r["data"])) for r in rows],
         )
 
@@ -209,7 +234,10 @@ async def _upsert_entity_rows(cur, table: str, rows: list[dict], has_status: boo
 async def _delete_ids(cur, table: str, ids: list[str]) -> None:
     clean = sorted({str(v or "").strip() for v in ids if str(v or "").strip()})
     if clean:
-        await cur.execute(f"DELETE FROM public.{table} WHERE id = ANY(%s::text[])", (clean,))
+        query = sql.SQL("DELETE FROM public.{} WHERE id = ANY(%s::text[])").format(
+            _entity_table_identifier(table)
+        )
+        await cur.execute(query, (clean,))
 
 
 async def _sync_payments(cur, rows: list[dict], deleted_ids: list[str]) -> None:

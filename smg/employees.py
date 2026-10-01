@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from psycopg import sql
 from psycopg.types.json import Jsonb
 
 from .db import connection
@@ -112,27 +113,31 @@ async def list_employee_documents(employee_id: str = "", period: str = "", kind:
     await ensure_employee_schema()
     conditions, values = [], []
     if employee_id:
-        conditions.append("employee_id=%s")
+        conditions.append(sql.SQL("employee_id=%s"))
         values.append(clean_text(employee_id, 120))
     if period:
-        conditions.append("period=%s")
+        conditions.append(sql.SQL("period=%s"))
         values.append(clean_text(period, 20))
     if kind:
-        conditions.append("kind=%s")
+        conditions.append(sql.SQL("kind=%s"))
         values.append(clean_text(kind, 40))
-    where = "WHERE " + " AND ".join(conditions) if conditions else ""
+    where = (
+        sql.SQL("WHERE ") + sql.SQL(" AND ").join(conditions)
+        if conditions
+        else sql.SQL("")
+    )
 
     async with connection() as conn:
         async with conn.cursor() as cur:
-            await cur.execute(
-                f"""
+            query = sql.SQL(
+                """
                 SELECT id,employee_id,kind,period,related_id,filename,mime_type,size_bytes,created_at
                 FROM public.smg_employee_documents
-                {where}
+                {}
                 ORDER BY created_at DESC
-                """,
-                tuple(values),
-            )
+                """
+            ).format(where)
+            await cur.execute(query, tuple(values))
             rows = await cur.fetchall()
     return [
         {
