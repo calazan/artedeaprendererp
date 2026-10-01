@@ -242,7 +242,7 @@
     }
     popup.document.open();
     popup.document.write(pageHTML);
-    popup.document.close();
+    popup.document.close(),popup.document.querySelector("[data-print-window]")?.addEventListener("click",()=>popup.print());
   };
 
   exportChildReportExcel = function exportChildReportExcelWithEvents() {

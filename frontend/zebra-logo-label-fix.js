@@ -113,7 +113,7 @@
           </style>
         </head>
         <body>
-          <div class="actions"><button onclick="window.print()">Imprimir etiqueta</button></div>
+          <div class="actions"><button data-print-window>Imprimir etiqueta</button></div>
           <main class="label">
             <div class="brand"><img src="${logoUrl}" alt="Arte de Aprender" /></div>
             <div class="details">
@@ -138,7 +138,7 @@
     }
     popup.document.open();
     popup.document.write(zebraLogoLabelHTML(payment));
-    popup.document.close();
+    popup.document.close(),popup.document.querySelector("[data-print-window]")?.addEventListener("click",()=>popup.print());
   };
 
   paymentLabelZPL = function paymentLabelZPLWithMonochromeLogo(payment) {

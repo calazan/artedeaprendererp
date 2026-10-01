@@ -88,7 +88,7 @@
             </style>
           </head>
           <body>
-            <div class="actions"><button onclick="window.print()">Imprimir</button></div>
+            <div class="actions"><button data-print-window>Imprimir</button></div>
             <main class="receipt">
               <div class="head">
                 <img src="${logoUrl}" alt="Arte de Aprender" />
@@ -117,7 +117,7 @@
       }
       popup.document.open();
       popup.document.write(receiptHTML);
-      popup.document.close();
+      popup.document.close(),popup.document.querySelector("[data-print-window]")?.addEventListener("click",()=>popup.print());
     };
 
     window.openReceipt = openReceipt;

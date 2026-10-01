@@ -1518,14 +1518,6 @@
     <script src="remote-sync-key-fix.js?v=8"></script>
     <script src="system-health-indicator.js?v=1"></script>
 
-    <script>
-      if ("serviceWorker" in navigator) {
-        window.addEventListener("load", () => {
-          navigator.serviceWorker.register("./sw.js?v=20261001-online1").catch((error) => {
-            console.warn("Service Worker não registrado:", error);
-          });
-        });
-      }
-    </script>
+    <script src="register-sw.js?v=1" defer></script>
   </body>
 </html>

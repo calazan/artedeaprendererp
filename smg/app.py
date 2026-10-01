@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import os
 
 from dotenv import load_dotenv
 from fastapi import FastAPI
@@ -43,6 +44,31 @@ app = FastAPI(
     redoc_url=None,
     lifespan=lifespan,
 )
+
+SECURITY_CSP = (
+    "default-src 'self'; "
+    "img-src 'self' data:; "
+    "script-src 'self'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "connect-src 'self'; "
+    "frame-ancestors 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'"
+)
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    response = await call_next(request)
+    response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "same-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    response.headers["X-Frame-Options"] = "DENY"
+    report_only = str(os.getenv("CSP_REPORT_ONLY", "")).strip().lower() in {"1", "true", "yes"}
+    header = "Content-Security-Policy-Report-Only" if report_only else "Content-Security-Policy"
+    response.headers[header] = SECURITY_CSP
+    return response
 
 for router in (
     auth_router,

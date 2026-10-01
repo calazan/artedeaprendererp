@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import html
 import ipaddress
 import json
 import time
@@ -233,28 +234,11 @@ small{{display:block;color:#746b78;margin-top:15px;text-align:center;line-height
 <div class="brand-panel"><img src="/logo-horizontal.webp?v=20261001" alt="Arte de Aprender" decoding="async"></div>
 <div class="version">Arte de Aprender ERP • Versão {APP_VERSION}</div>
 <h1>Gestão Arte de Aprender</h1><p class="lead">Entre com sua conta autorizada.</p>
-<form id="login"><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" required>
+<form id="login" data-next="{html.escape(safe_next, quote=True)}"><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" required>
 <label for="password">Senha</label><input id="password" type="password" autocomplete="current-password" required>
 <button type="submit">Entrar</button><div id="error" role="alert"></div></form>
 <small>A sessão é protegida e expira automaticamente após 8 horas.</small></main>
-<script>
-document.getElementById("login").addEventListener("submit", async (event) => {{
-  event.preventDefault();
-  const error = document.getElementById("error");
-  error.textContent = "";
-  try {{
-    const response = await fetch("/api/auth/login", {{
-      method: "POST", headers: {{"Content-Type":"application/json"}},
-      body: JSON.stringify({{email:document.getElementById("email").value,password:document.getElementById("password").value}})
-    }});
-    const data = await response.json();
-    if (!response.ok) throw new Error(data.error || "Não foi possível entrar.");
-    location.replace("/");
-  }} catch (reason) {{ error.textContent = reason.message || "Falha de autenticação."; }}
-}});
-</script></body></html>"""
-    # Preserve validated relative next path without interpolating untrusted HTML/JS.
-    page = page.replace("location.replace(\"/\");", f"location.replace({json.dumps(safe_next)});")
+<script src="/login-auth.js?v=1" defer></script></body></html>"""
     return HTMLResponse(
         page,
         headers={
