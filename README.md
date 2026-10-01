@@ -52,12 +52,13 @@ Depois do primeiro usuário, acesse `/login` e entre com o e-mail e a senha cria
 
 ## Política de dados locais
 
-O ERP é operado como sistema online. Durante uma sessão autenticada, a versão atual ainda mantém um estado transitório no navegador por compatibilidade com o frontend legado; esse estado é apagado no logout, na expiração da sessão e ao abrir a tela de login. Esta etapa é temporária até a migração do frontend para APIs por entidade.
+O ERP é operado como sistema online. O snapshot operacional legado necessário para renderizar a interface existe somente **na memória JavaScript da aba durante a sessão autenticada**. As chamadas legadas a chaves `arteDeAprenderERP.*` de `localStorage` e `sessionStorage` são interceptadas antes do carregamento do aplicativo e virtualizadas em memória.
 
-Não são permitidos backups locais automáticos, cópias de erro ou filas offline contendo dados pessoais. O Service Worker guarda somente assets estáticos versionados (JavaScript, CSS e imagens), nunca HTML autenticado nem respostas de API.
+A única chave do namespace autorizada a persistir em `localStorage` durante a sessão é `arteDeAprenderERP.navigationColors.v2`, que contém somente preferência visual das cores do menu. Ela não contém nome, CPF, contato, saúde, financeiro, documento ou identificador de criança/funcionário.
 
-O navegador pode manter apenas preferências não pessoais enquanto a sessão estiver ativa, por exemplo cores de navegação e estado visual. Nenhuma preferência desse tipo deve conter nomes, CPF, contatos, dados de saúde, financeiro ou documentos. Ao encerrar a sessão, todas as chaves com prefixo `arteDeAprenderERP.` são removidas de `localStorage` e `sessionStorage`, e os caches do aplicativo são apagados.
+Não são permitidos backups locais automáticos, cópias de erro, snapshots de funcionários/alunos/financeiro nem filas offline persistentes. O Service Worker guarda somente assets estáticos versionados (JavaScript, CSS e imagens), nunca HTML autenticado nem respostas de API.
 
+No logout, em resposta 401 e ao abrir a tela de login, o namespace do ERP e os caches são eliminados. A migração futura para APIs por entidade removerá também a dependência do snapshot amplo em memória.
 
 ## Matriz de permissões
 

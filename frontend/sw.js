@@ -2,7 +2,6 @@ const CACHE_NAME = "arte-de-aprender-static-20261001-online-only";
 const PRECACHE = [
   "./styles.min.css?v=20261001",
   "./menu-brand.css?v=20261001",
-  "./pre-app-state-guard.js?v=1",
   "./python-auth-bridge.js?v=3",
   "./smg-confirm-dialog.js?v=1",
   "./app.min.js?v=469-a3p3",

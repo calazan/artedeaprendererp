@@ -1,14 +1,20 @@
 # Plano para modo online-only
 
-A interface atual ainda usa um objeto de estado amplo no navegador durante a sessão. Remover essa dependência de uma só vez seria uma refatoração de alto risco.
+## Estado atual
 
-Plano de fase 2:
+A interface legado ainda trabalha com um objeto amplo de estado durante a sessão, mas esse snapshot não é mais persistido no disco do navegador: o bridge de autenticação virtualiza o namespace `arteDeAprenderERP.*` em memória antes de `app.min.js` iniciar.
+
+A única preferência que pode permanecer em `localStorage` durante a sessão é `arteDeAprenderERP.navigationColors.v2`, que contém somente cores do menu. Logout, expiração/401 e a página de login limpam o namespace e caches.
+
+## Fase 2
+
+A virtualização é uma camada de transição. A arquitetura final deve:
 
 1. criar APIs por entidade para crianças, responsáveis, financeiro, chamada, eventos, configurações e funcionários;
-2. trocar o carregamento inicial de snapshot por consultas paginadas e sob demanda;
-3. remover a gravação do estado completo em localStorage;
-4. manter no navegador apenas preferências não pessoais, com namespace separado;
-5. implementar cache somente em memória para a sessão ativa e invalidá-lo no logout;
-6. adicionar testes E2E verificando que localStorage/sessionStorage/CacheStorage não contêm dados pessoais após navegação, expiração e logout.
+2. trocar o carregamento de snapshot completo por consultas paginadas e sob demanda;
+3. manter no frontend somente caches em memória e dados necessários à tela atual;
+4. separar preferências não pessoais em namespace próprio;
+5. invalidar todo cache em memória no logout e na revogação de sessão;
+6. adicionar testes E2E de navegador verificando localStorage, sessionStorage, IndexedDB e CacheStorage após navegação, expiração e logout.
 
-Até essa migração, o estado transitório legado é limpo agressivamente no fim da sessão e nenhum backup local automático é criado.
+Nenhuma fila offline com dados pessoais ou backup local deve ser reintroduzido.

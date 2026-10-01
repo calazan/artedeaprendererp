@@ -1,9 +1,30 @@
 (() => {
   const SESSION_KEY = "arteDeAprenderERP.session";
   const STORAGE_PREFIX = "arteDeAprenderERP.";
+  const SAFE_PERSISTENT_KEYS = new Set([
+    "arteDeAprenderERP.navigationColors.v2",
+  ]);
   const SESSION_SYNC_SENTINEL = "python-session-authenticated-bridge-v1";
   const nativeFetch = window.fetch.bind(window);
+  const nativeStorage = {
+    getItem: Storage.prototype.getItem,
+    setItem: Storage.prototype.setItem,
+    removeItem: Storage.prototype.removeItem,
+    clear: Storage.prototype.clear,
+  };
+  const volatileLocal = new Map();
+  const volatileSession = new Map();
   let clearingSession = false;
+
+  function volatileMap(storage) {
+    return storage === localStorage ? volatileLocal : volatileSession;
+  }
+
+  function shouldVirtualize(storage, key) {
+    const value = String(key || "");
+    if (!value.startsWith(STORAGE_PREFIX)) return false;
+    return storage === sessionStorage || !SAFE_PERSISTENT_KEYS.has(value);
+  }
 
   function prefixedKeys(storage) {
     const keys = [];
@@ -16,10 +37,55 @@
     return keys;
   }
 
-  async function clearClientData() {
+  function purgePersistedSensitiveState() {
     for (const storage of [localStorage, sessionStorage]) {
       prefixedKeys(storage).forEach((key) => {
-        try { storage.removeItem(key); } catch {}
+        if (storage === localStorage && SAFE_PERSISTENT_KEYS.has(key)) return;
+        try { nativeStorage.removeItem.call(storage, key); } catch {}
+      });
+    }
+  }
+
+  // Execute antes de app.min.js: nenhum snapshot pessoal do namespace ERP
+  // permanece no armazenamento persistente. O código legado continua enxergando
+  // essas chaves, mas elas vivem somente em memória durante a sessão atual.
+  purgePersistedSensitiveState();
+
+  Storage.prototype.getItem = function onlineOnlyGetItem(key) {
+    if (shouldVirtualize(this, key)) {
+      const map = volatileMap(this);
+      return map.has(String(key)) ? map.get(String(key)) : null;
+    }
+    return nativeStorage.getItem.call(this, key);
+  };
+
+  Storage.prototype.setItem = function onlineOnlySetItem(key, value) {
+    if (shouldVirtualize(this, key)) {
+      volatileMap(this).set(String(key), String(value));
+      return;
+    }
+    return nativeStorage.setItem.call(this, key, value);
+  };
+
+  Storage.prototype.removeItem = function onlineOnlyRemoveItem(key) {
+    if (shouldVirtualize(this, key)) {
+      volatileMap(this).delete(String(key));
+      return;
+    }
+    return nativeStorage.removeItem.call(this, key);
+  };
+
+  Storage.prototype.clear = function onlineOnlyClear() {
+    volatileMap(this).clear();
+    return nativeStorage.clear.call(this);
+  };
+
+  async function clearClientData() {
+    volatileLocal.clear();
+    volatileSession.clear();
+    for (const storage of [localStorage, sessionStorage]) {
+      prefixedKeys(storage).forEach((key) => {
+        try { nativeStorage.removeItem.call(storage, key); } catch {}
       });
     }
     if ("caches" in window) {
@@ -37,6 +103,10 @@
   }
 
   window.__arteDeAprenderClearClientData = clearClientData;
+  window.__arteDeAprenderVolatileStorage = {
+    local: volatileLocal,
+    session: volatileSession,
+  };
 
   window.fetch = async function authenticatedFetch(input, init) {
     const response = await nativeFetch(input, init);
@@ -110,10 +180,6 @@
     if (passwordForm) passwordForm.hidden = true;
   }
 
-  function updateRuntimeBranding() {
-    if (document.body) document.body.dataset.appVersion = document.body.dataset.appVersion || "";
-  }
-
   function bind() {
     sessionStorage.setItem(SESSION_KEY, "true");
     const login = document.querySelector("#loginScreen");
@@ -124,7 +190,6 @@
 
     installSessionCompatibility();
     simplifySecurityUi();
-    updateRuntimeBranding();
     window.setTimeout(() => { installSessionCompatibility(); simplifySecurityUi(); }, 500);
     window.setTimeout(() => { installSessionCompatibility(); simplifySecurityUi(); }, 2000);
   }

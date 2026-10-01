@@ -50,3 +50,21 @@ def test_teacher_attendance_has_no_persistent_offline_queue():
     assert "teacher-offline" not in source
     assert "writeJSON(TEACHER_PENDING_KEY" not in source
     assert "Sem fila offline persistente" in source
+
+
+def test_operational_storage_namespace_is_virtualized_before_app_load():
+    source = (ROOT / "frontend" / "python-auth-bridge.js").read_text(encoding="utf-8")
+    index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert "Storage.prototype.getItem = function onlineOnlyGetItem" in source
+    assert "Storage.prototype.setItem = function onlineOnlySetItem" in source
+    assert "purgePersistedSensitiveState();" in source
+    assert 'SAFE_PERSISTENT_KEYS' in source
+    assert '"arteDeAprenderERP.navigationColors.v2"' in source
+    assert index.index("python-auth-bridge.js") < index.index("app.min.js")
+
+
+def test_pre_app_payment_snapshot_is_not_precached_or_loaded():
+    worker = (ROOT / "frontend" / "sw.js").read_text(encoding="utf-8")
+    index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
+    assert "pre-app-state-guard.js" not in worker
+    assert "pre-app-state-guard.js" not in index
