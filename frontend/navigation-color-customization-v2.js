@@ -1,27 +1,27 @@
 // Personalização robusta das cores do menu principal e dos submenus do Arte de Aprender.
 (() => {
-  if (window.__saberNavigationColorCustomizationV2Loaded) return;
-  window.__saberNavigationColorCustomizationV2Loaded = true;
+  if (window.__arteNavigationColorCustomizationV2Loaded) return;
+  window.__arteNavigationColorCustomizationV2Loaded = true;
 
   const VERSION = 2;
   const STORAGE_KEY = "arteDeAprenderERP.navigationColors.v2";
   const MAIN_DEFAULTS = {
-    dashboard: "#8f5199",
-    finance: "#e7a821",
-    employees: "#5b68b7",
-    students: "#e4514a",
-    attendance: "#3f94bd",
-    extraEvents: "#e78337",
-    agenda: "#3ca291",
-    reports: "#d96537",
-    proposals: "#7762b4",
-    preRegistrations: "#d85b98",
-    settings: "#633d6b",
-    teacherAttendance: "#47715a",
+    dashboard: "#76008a",
+    finance: "#f3c524",
+    employees: "#9253bc",
+    students: "#ef477e",
+    attendance: "#24b9d8",
+    extraEvents: "#f5b92b",
+    agenda: "#43c9a8",
+    reports: "#8d50b2",
+    proposals: "#4bc6c4",
+    preRegistrations: "#eb5a92",
+    settings: "#682f7c",
+    teacherAttendance: "#309a85",
   };
   const SUBMENU_DEFAULTS = [
-    "#8f5aa1", "#c76092", "#4e8fb6", "#dd8b36", "#4c9b83",
-    "#7666b3", "#cf6551", "#b68a31", "#536fae", "#8f617c",
+    "#76008a", "#ef5b94", "#22bddc", "#f6c924", "#43c9a8",
+    "#a66bd1", "#e84c7f", "#d6a51a", "#379fbc", "#8a4d9b",
   ];
 
   let paintTimer = null;
@@ -72,7 +72,7 @@
   }
 
   function shade(hex, percent) {
-    const clean = normalizeHex(hex) || "#76507e";
+    const clean = normalizeHex(hex) || "#76008a";
     const value = parseInt(clean.slice(1), 16);
     const amount = Math.round(2.55 * percent);
     const r = Math.max(0, Math.min(255, (value >> 16) + amount));
@@ -82,7 +82,7 @@
   }
 
   function contrast(hex) {
-    const clean = normalizeHex(hex) || "#76507e";
+    const clean = normalizeHex(hex) || "#76008a";
     const value = parseInt(clean.slice(1), 16);
     const r = (value >> 16) & 255;
     const g = (value >> 8) & 255;
@@ -143,7 +143,7 @@
   }
 
   function defaultMain(key) {
-    return MAIN_DEFAULTS[key] || "#76507e";
+    return MAIN_DEFAULTS[key] || "#76008a";
   }
 
   function defaultSubmenu(key) {
@@ -368,5 +368,5 @@
   observer.observe(document.body, { childList: true, subtree: true });
 
   document.addEventListener("click", () => setTimeout(applyColors, 0), true);
-  window.__saberNavigationColors = { apply: applyColors, renderEditor, resetAll, setColor };
+  window.__arteNavigationColors = { apply: applyColors, renderEditor, resetAll, setColor };
 })();

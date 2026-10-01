@@ -95,9 +95,9 @@
     dashboard.classList.add("dashboard-redesigned");
 
     const hero = dashboard.querySelector(".brand-hero-banner");
-    const heroImage = hero?.querySelector(".hero-banner-only");
+    const heroImage = hero?.querySelector("img");
     if (heroImage && !heroImage.dataset.dashboardBannerApplied) {
-      heroImage.src = "dashboard-banner.svg?v=1";
+      heroImage.src = "banner-dashboard.webp?v=20261001";
       heroImage.alt = "Arte de Aprender ERP — Organização simples para sua rotina";
       heroImage.dataset.dashboardBannerApplied = "true";
     }
