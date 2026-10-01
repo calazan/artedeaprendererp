@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#8f4d9c" />
+    <meta name="robots" content="noindex,nofollow" />
+    <title>Pré-cadastro | Arte de Aprender</title>
+    <link rel="icon" type="image/png" href="favicon.png" />
+    <link rel="stylesheet" href="pre-cadastro.css?v=1" />
+  </head>
+  <body>
+    <main class="page-shell">
+      <header class="hero">
+        <img class="hero-logo" src="2.webp" alt="Arte de Aprender" />
+        <div>
+          <span class="eyebrow">Matrícula</span>
+          <h1>Pré-cadastro da criança</h1>
+          <p>Preencha as informações com atenção. Após o envio, a equipe do Arte de Aprender fará a conferência e entrará em contato para concluir a matrícula.</p>
+          <p class="hero-note"><strong>Importante:</strong> o preenchimento deste formulário não confirma vaga nem gera cobrança.</p>
+        </div>
+      </header>
+
+      <div class="progress-card" aria-live="polite">
+        <div class="progress-row"><strong>Progresso do formulário</strong><span id="progressLabel">0%</span></div>
+        <div class="progress-track"><div class="progress-bar" id="progressBar"></div></div>
+      </div>
+
+      <div class="form-alert" id="formAlert" role="alert"></div>
+
+      <form id="preRegistrationForm" novalidate>
+        <input class="honeypot" id="website" name="website" tabindex="-1" autocomplete="off" aria-hidden="true" />
+
+        <section class="form-section">
+          <div class="section-head"><span class="section-number">1</span><div><h2>Dados da criança</h2><p>Informações básicas e escolares.</p></div></div>
+          <div class="field-grid">
+            <div class="field wide"><label class="required" for="childName">Nome completo da criança</label><input id="childName" autocomplete="name" required maxlength="160" /></div>
+            <div class="field"><label class="required" for="birthDate">Data de nascimento</label><input id="birthDate" type="date" required /></div>
+            <div class="field"><label for="schoolName">Escola em que estuda</label><input id="schoolName" maxlength="180" /></div>
+            <div class="field"><label for="schoolYear">Ano ou série escolar</label><input id="schoolYear" placeholder="Ex.: 3º ano" maxlength="80" /></div>
+            <div class="field"><label for="schoolPeriod">Período em que estuda</label><select id="schoolPeriod"><option value="">Escolher</option><option>Manhã</option><option>Tarde</option><option>Integral</option><option>Não está matriculada</option></select></div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><span class="section-number">2</span><div><h2>Responsável principal</h2><p>Pessoa que responderá pelo cadastro e pela comunicação.</p></div></div>
+          <div class="field-grid">
+            <div class="field wide"><label class="required" for="guardianName">Nome completo do responsável</label><input id="guardianName" autocomplete="name" required maxlength="160" /></div>
+            <div class="field"><label class="required" for="guardianCpf">CPF do responsável</label><input id="guardianCpf" inputmode="numeric" autocomplete="off" placeholder="000.000.000-00" required maxlength="14" /></div>
+            <div class="field"><label class="required" for="relationship">Parentesco ou vínculo</label><select id="relationship" required><option value="">Escolher</option><option>Mãe</option><option>Pai</option><option>Avó</option><option>Avô</option><option>Responsável legal</option><option>Outro</option></select></div>
+            <div class="field"><label class="required" for="guardianPhone">Telefone com WhatsApp</label><input id="guardianPhone" type="tel" inputmode="tel" autocomplete="tel" placeholder="(00) 99999-9999" required maxlength="16" /></div>
+            <div class="field"><label for="secondPhone">Segundo telefone</label><input id="secondPhone" type="tel" inputmode="tel" placeholder="(00) 99999-9999" maxlength="16" /></div>
+            <div class="field"><label for="email">E-mail</label><input id="email" type="email" autocomplete="email" maxlength="180" /></div>
+            <div class="field"><label for="profession">Profissão do responsável</label><input id="profession" maxlength="120" /></div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><span class="section-number">3</span><div><h2>Endereço</h2><p>Endereço residencial da criança.</p></div></div>
+          <div class="field-grid three">
+            <div class="field"><label class="required" for="cep">CEP</label><input id="cep" inputmode="numeric" autocomplete="postal-code" placeholder="00000-000" required maxlength="9" /></div>
+            <div class="field wide"><label class="required" for="street">Rua ou avenida</label><input id="street" autocomplete="address-line1" required maxlength="180" /></div>
+            <div class="field"><label class="required" for="addressNumber">Número</label><input id="addressNumber" autocomplete="address-line2" required maxlength="30" /></div>
+            <div class="field"><label for="complement">Complemento</label><input id="complement" maxlength="120" /></div>
+            <div class="field"><label class="required" for="district">Bairro</label><input id="district" required maxlength="120" /></div>
+            <div class="field"><label class="required" for="city">Cidade</label><input id="city" autocomplete="address-level2" value="" required maxlength="120" /></div>
+            <div class="field"><label class="required" for="state">Estado</label><input id="state" autocomplete="address-level1" value="" required maxlength="2" /></div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><span class="section-number">4</span><div><h2>Contato de emergência</h2><p>Pessoa que poderá ser acionada caso o responsável principal não esteja disponível.</p></div></div>
+          <div class="field-grid">
+            <div class="field wide"><label class="required" for="emergencyName">Nome completo</label><input id="emergencyName" required maxlength="160" /></div>
+            <div class="field"><label class="required" for="emergencyRelationship">Parentesco ou vínculo</label><input id="emergencyRelationship" required maxlength="80" /></div>
+            <div class="field"><label class="required" for="emergencyPhone">Telefone de emergência</label><input id="emergencyPhone" type="tel" inputmode="tel" placeholder="(00) 99999-9999" required maxlength="16" /></div>
+            <fieldset class="field wide"><legend>Essa pessoa está autorizada a buscar a criança?</legend><div class="choice-grid"><label class="choice-card"><input type="radio" name="emergencyAuthorizedPickup" value="true" /><span>Sim</span></label><label class="choice-card"><input type="radio" name="emergencyAuthorizedPickup" value="false" checked /><span>Não</span></label></div></fieldset>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><span class="section-number">5</span><div><h2>Saúde e cuidados</h2><p>Essas informações ajudam a equipe a atender a criança com segurança.</p></div></div>
+          <div class="field-grid">
+            <div class="field"><label class="required" for="hasAllergy">A criança possui alguma alergia?</label><select id="hasAllergy" required data-conditional-target="allergyDetailsBox"><option value="false">Não</option><option value="true">Sim</option></select></div>
+            <div class="field conditional wide" id="allergyDetailsBox"><label for="allergyDetails">Qual alergia e quais cuidados devem ser tomados?</label><textarea id="allergyDetails" maxlength="1500"></textarea></div>
+
+            <div class="field"><label class="required" for="hasFoodRestriction">Possui alguma restrição alimentar?</label><select id="hasFoodRestriction" required data-conditional-target="foodRestrictionBox"><option value="false">Não</option><option value="true">Sim</option></select></div>
+            <div class="field conditional wide" id="foodRestrictionBox"><label for="foodRestrictionDetails">Quais alimentos não pode consumir?</label><textarea id="foodRestrictionDetails" maxlength="1500"></textarea></div>
+
+            <div class="field"><label for="usesMedication">Utiliza algum medicamento regularmente?</label><select id="usesMedication" data-conditional-target="medicationBox"><option value="false">Não</option><option value="true">Sim</option></select></div>
+            <div class="field conditional wide" id="medicationBox"><label for="medicationDetails">Nome do medicamento, horário e orientações importantes</label><textarea id="medicationDetails" maxlength="1500"></textarea></div>
+
+            <div class="field"><label for="hasHealthCondition">Possui alguma condição de saúde que precisamos conhecer?</label><select id="hasHealthCondition" data-conditional-target="healthConditionBox"><option value="false">Não</option><option value="true">Sim</option></select></div>
+            <div class="field conditional wide" id="healthConditionBox"><label for="healthConditionDetails">Condição e cuidados necessários</label><textarea id="healthConditionDetails" maxlength="2000"></textarea></div>
+
+            <div class="field wide"><label for="diagnosisStatus">Diagnóstico, deficiência ou necessidade específica de acompanhamento</label><select id="diagnosisStatus" data-diagnosis-select><option value="Não">Não</option><option value="Sim">Sim</option><option value="Em processo de avaliação">Está em processo de avaliação</option><option value="Prefiro conversar pessoalmente">Prefiro conversar pessoalmente</option></select></div>
+            <div class="field conditional wide" id="diagnosisDetailsBox"><label for="diagnosisDetails">Descreva as informações e cuidados que considera importantes</label><textarea id="diagnosisDetails" maxlength="2000"></textarea></div>
+
+            <div class="field wide"><label for="routineDetails">Informações sobre comportamento, alimentação, sono, comunicação ou rotina</label><textarea id="routineDetails" maxlength="2500"></textarea></div>
+            <div class="field"><label for="healthPlan">Plano de saúde</label><input id="healthPlan" maxlength="180" /></div>
+            <div class="field"><label for="preferredHospital">Hospital ou unidade de saúde de preferência</label><input id="preferredHospital" maxlength="180" /></div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><span class="section-number">6</span><div><h2>Pessoas autorizadas</h2><p>Inclua outras pessoas que poderão buscar a criança.</p></div></div>
+          <div class="authorized-list" id="authorizedPeopleList"></div>
+          <button type="button" class="secondary-button" id="addAuthorizedPerson">+ Adicionar pessoa autorizada</button>
+          <div class="field-grid" style="margin-top:18px">
+            <div class="field"><label for="hasUnauthorizedPerson">Existe alguém que não está autorizado a retirar a criança?</label><select id="hasUnauthorizedPerson" data-conditional-target="unauthorizedPersonBox"><option value="false">Não</option><option value="true">Sim</option></select></div>
+            <div class="field conditional wide" id="unauthorizedPersonBox"><label for="unauthorizedPersonDetails">Nome da pessoa e orientações necessárias</label><textarea id="unauthorizedPersonDetails" maxlength="1200"></textarea></div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><span class="section-number">7</span><div><h2>Interesse no Arte de Aprender</h2><p>Essas escolhas serão confirmadas pela equipe antes da matrícula.</p></div></div>
+          <div class="field-grid">
+            <div class="field"><label class="required" for="serviceInterest">Serviço ou modalidade de interesse</label><select id="serviceInterest" required data-conditional-target="otherServiceBox"><option value="">Escolher</option><option>Contraturno</option><option>Hora avulsa</option><option>Diária</option><option>Colônia de férias</option><option>Ballet</option><option>Karatê</option><option>Inglês</option><option>Outro</option></select></div>
+            <div class="field conditional" id="otherServiceBox"><label for="otherService">Qual outro serviço?</label><input id="otherService" maxlength="160" /></div>
+            <fieldset class="field wide"><legend>Dias da semana de interesse</legend><div class="weekday-grid"><label class="choice-card"><input type="checkbox" name="weekdays" value="Segunda-feira" /><span>Segunda</span></label><label class="choice-card"><input type="checkbox" name="weekdays" value="Terça-feira" /><span>Terça</span></label><label class="choice-card"><input type="checkbox" name="weekdays" value="Quarta-feira" /><span>Quarta</span></label><label class="choice-card"><input type="checkbox" name="weekdays" value="Quinta-feira" /><span>Quinta</span></label><label class="choice-card"><input type="checkbox" name="weekdays" value="Sexta-feira" /><span>Sexta</span></label></div></fieldset>
+            <div class="field"><label for="expectedStartDate">Data prevista para início</label><input id="expectedStartDate" type="date" /></div>
+            <div class="field"><label for="referralSource">Como conheceu o Arte de Aprender?</label><select id="referralSource" data-conditional-target="referralOtherBox"><option value="">Escolher</option><option>Indicação</option><option>Instagram</option><option>Facebook</option><option>WhatsApp</option><option>Escola</option><option>Evento</option><option>Outro</option></select></div>
+            <div class="field conditional" id="referralOtherBox"><label for="referralOther">Conte para nós</label><input id="referralOther" maxlength="160" /></div>
+          </div>
+        </section>
+
+        <section class="form-section">
+          <div class="section-head"><span class="section-number">8</span><div><h2>Autorizações e confirmação</h2><p>Leia e marque as opções obrigatórias.</p></div></div>
+          <div class="field-grid">
+            <fieldset class="field wide"><legend class="required">Autorização de uso de imagem</legend><div class="choice-grid"><label class="choice-card"><input type="radio" name="imageAuthorization" value="internal-social" required /><span>Autorizo registros internos e divulgação em redes sociais e materiais do Arte de Aprender.</span></label><label class="choice-card"><input type="radio" name="imageAuthorization" value="internal-only" /><span>Autorizo somente registros internos e comunicação com a família.</span></label><label class="choice-card"><input type="radio" name="imageAuthorization" value="none" /><span>Não autorizo o uso de imagem.</span></label></div></fieldset>
+            <div class="field wide"><label class="check-line"><input id="consentContact" type="checkbox" required /><span>Autorizo que a equipe entre em contato por telefone ou WhatsApp para tratar do cadastro e da rotina da criança.</span></label></div>
+            <div class="field wide"><label class="check-line"><input id="consentTruth" type="checkbox" required /><span>Declaro que as informações fornecidas são verdadeiras e me comprometo a comunicar qualquer alteração.</span></label></div>
+            <div class="field wide"><label class="check-line"><input id="consentStorage" type="checkbox" required /><span>Autorizo o armazenamento destas informações para análise do pré-cadastro, atendimento e segurança da criança.</span></label></div>
+            <div class="field wide"><label class="required" for="submitterName">Nome completo de quem está preenchendo</label><input id="submitterName" required maxlength="160" /></div>
+            <div class="field wide"><label class="check-line"><input id="consentResponsibility" type="checkbox" required /><span>Confirmo que sou responsável pela criança e concordo com as informações acima.</span></label></div>
+            <div class="field wide"><div class="privacy-box"><strong>Proteção das informações:</strong> os dados enviados serão usados pelo Arte de Aprender para analisar e concluir a matrícula. O cadastro só será ativado após conferência da equipe.</div></div>
+          </div>
+        </section>
+
+        <section class="form-section form-footer">
+          <p>Campos com * são obrigatórios. Revise os telefones e as informações de saúde antes de enviar.</p>
+          <button type="submit" class="primary-button" id="submitButton">Enviar pré-cadastro</button>
+        </section>
+      </form>
+
+      <section class="success-card" id="successCard" aria-live="polite">
+        <div class="success-icon">✓</div>
+        <h2>Pré-cadastro enviado!</h2>
+        <p>As informações foram recebidas pela equipe do Arte de Aprender. Guarde o protocolo abaixo.</p>
+        <div class="protocol" id="protocolNumber"></div>
+        <p>O envio não confirma vaga. A equipe entrará em contato para revisar o plano, os dias e os valores antes de efetivar a matrícula.</p>
+      </section>
+    </main>
+
+    <script src="pre-cadastro.js?v=1"></script>
+  </body>
+</html>
