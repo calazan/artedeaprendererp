@@ -189,8 +189,8 @@ async def delete_record(resource: str, record_id: str, *, expected_version: int 
             return (await cur.fetchone()) is not None
 
 
-async def migrate_supplemental_state(state: dict) -> dict:
-    """Mirror compatibility collections as independent versioned rows without deleting source data."""
+async def migrate_supplemental_state_with_cursor(cur, state: dict) -> dict:
+    """Mirror compatibility collections using the caller transaction."""
     migrated = 0
     for state_key, value in as_dict(state).items():
         resource = STATE_RESOURCE_ALIASES.get(state_key)
@@ -199,15 +199,33 @@ async def migrate_supplemental_state(state: dict) -> dict:
             "event-participants", "tasks", "employees",
         }:
             continue
-        if isinstance(value, list):
-            for raw in value:
-                if isinstance(raw, dict):
-                    await save_record(resource, raw)
-                    migrated += 1
-        elif isinstance(value, dict):
-            if value.get("id"):
-                await save_record(resource, value)
-            else:
-                await save_record(resource, {"id": "default", **value})
+        rows = value if isinstance(value, list) else [value] if isinstance(value, dict) else []
+        for raw in rows:
+            if not isinstance(raw, dict):
+                continue
+            item = {key: val for key, val in raw.items() if not str(key).startswith("_")}
+            record_id = normalize_id(item.get("id") or ("default" if isinstance(value, dict) else ""))
+            item["id"] = record_id
+            await cur.execute(
+                """
+                INSERT INTO public.smg_domain_records(resource_type,id,data,version,deleted_at,updated_at)
+                VALUES (%s,%s,%s,1,NULL,now())
+                ON CONFLICT(resource_type,id) DO UPDATE SET
+                  data=EXCLUDED.data,
+                  version=public.smg_domain_records.version+1,
+                  deleted_at=NULL,
+                  updated_at=now()
+                """,
+                (resource, record_id, Jsonb(item)),
+            )
             migrated += 1
     return {"migrated": migrated, "updatedAt": iso_now()}
+
+
+async def migrate_supplemental_state(state: dict) -> dict:
+    """Mirror compatibility collections as independent versioned rows without deleting source data."""
+    await ensure_domain_schema()
+    async with connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                return await migrate_supplemental_state_with_cursor(cur, state)

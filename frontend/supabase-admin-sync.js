@@ -1,4 +1,4 @@
-// Integração principal do Arte de Aprender ERP com Supabase.
+// Integração principal do Arte de Aprender ERP com Neon.
 // Protege alterações locais contra sobrescrita por pulls concorrentes.
 (() => {
   function loadStabilityAndBoot() {
@@ -25,14 +25,14 @@
   }
 
   function boot() {
-    if (window.__saberSupabaseAdminLoaded) return;
-    window.__saberSupabaseAdminLoaded = true;
+    if (window.__saberNeonAdminLoaded) return;
+    window.__saberNeonAdminLoaded = true;
 
     const HEALTH_ENDPOINT = "/api/database-health";
     const SYNC_ENDPOINT = "/api/database-sync";
-    const SNAPSHOT_KEY = "arteDeAprenderERP.supabase.snapshot.v2";
-    const LAST_SYNC_KEY = "arteDeAprenderERP.supabase.lastSyncAt";
-    const CLIENT_KEY = "arteDeAprenderERP.supabase.clientId";
+    const SNAPSHOT_KEY = "arteDeAprenderERP.neon.snapshot.v2";
+    const LAST_SYNC_KEY = "arteDeAprenderERP.neon.lastSyncAt";
+    const CLIENT_KEY = "arteDeAprenderERP.neon.clientId";
     const PUSH_DELAY_MS = 1400;
     const PUSH_RETRY_MS = 6000;
     const PULL_INTERVAL_MS = 60_000;
@@ -45,6 +45,7 @@
     let ready = false;
     let lastFingerprint = "";
     let localRevision = 0;
+    let remoteRevision = 0;
     let pendingPush = false;
     let retryPush = false;
 
@@ -73,7 +74,7 @@
     function clientId() {
       let value = localStorage.getItem(CLIENT_KEY);
       if (!value) {
-        value = globalThis.crypto?.randomUUID?.() || `supabase-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        value = globalThis.crypto?.randomUUID?.() || `neon-${Date.now()}-${Math.random().toString(16).slice(2)}`;
         localStorage.setItem(CLIENT_KEY, value);
       }
       return value;
@@ -140,37 +141,37 @@
       return JSON.stringify(payload);
     }
 
-    function setSupabaseStatus(message, tone = "") {
-      const box = document.querySelector("#supabaseSyncStatus");
+    function setNeonStatus(message, tone = "") {
+      const box = document.querySelector("#neonSyncStatus");
       if (box) {
         box.textContent = message;
         box.dataset.tone = tone;
       }
     }
 
-    function injectSupabaseCard() {
-      if (document.querySelector("#supabaseSyncCard")) return;
+    function injectNeonCard() {
+      if (document.querySelector("#neonSyncCard")) return;
       const pane = document.querySelector('[data-settings-pane-content="remote"]');
       if (!pane) return;
       const card = document.createElement("div");
-      card.id = "supabaseSyncCard";
+      card.id = "neonSyncCard";
       card.className = "settings-card remote-sync-card";
       card.innerHTML = `
-        <h3>Banco Supabase</h3>
+        <h3>Banco Neon</h3>
         <p>Cadastros, chamada, mensalidades, despesas, contas bancárias e demais dados operacionais são sincronizados entre os computadores.</p>
         <div class="remote-sync-status-box">
           <span>Status</span>
-          <strong id="supabaseSyncStatus">Verificando conexão...</strong>
+          <strong id="neonSyncStatus">Verificando conexão...</strong>
           <small>Senhas e a chave de sincronização permanecem somente neste dispositivo.</small>
         </div>
         <div class="form-actions">
-          <button type="button" id="supabasePushNow">Enviar dados atuais</button>
-          <button type="button" class="secondary" id="supabasePullNow">Baixar dados do Supabase</button>
+          <button type="button" id="neonPushNow">Enviar dados atuais</button>
+          <button type="button" class="secondary" id="neonPullNow">Baixar dados do Neon</button>
         </div>`;
       pane.appendChild(card);
 
-      card.querySelector("#supabasePushNow")?.addEventListener("click", () => syncNow({ force: true, manual: true }));
-      card.querySelector("#supabasePullNow")?.addEventListener("click", () => pullNow({ manual: true, force: true }));
+      card.querySelector("#neonPushNow")?.addEventListener("click", () => syncNow({ force: true, manual: true }));
+      card.querySelector("#neonPullNow")?.addEventListener("click", () => pullNow({ manual: true, force: true }));
     }
 
     function stopBlobLoops() {
@@ -233,7 +234,7 @@
 
       const revisionAtStart = localRevision;
       busy = true;
-      setSupabaseStatus("Sincronizando alterações...", "working");
+      setNeonStatus("Sincronizando alterações...", "working");
       try {
         const deleted = deletedSinceLast(payload);
         const result = await request(SYNC_ENDPOINT, {
@@ -243,29 +244,32 @@
             state: payload,
             deleted,
             clientId: clientId(),
-            source: "saber-mais-admin",
+            source: "arte-de-aprender-admin",
+            baseRevision: remoteRevision,
+            force: options.force === true,
           }),
         });
         writeJSON(SNAPSHOT_KEY, idsSnapshot(payload));
+        remoteRevision = Number(result.revision || remoteRevision || 0);
         localStorage.setItem(LAST_SYNC_KEY, result.updatedAt || new Date().toISOString());
         lastFingerprint = nextFingerprint;
         ready = true;
         retryPush = false;
         pendingPush = localRevision !== revisionAtStart;
         stopBlobLoops();
-        setSupabaseStatus(
+        setNeonStatus(
           pendingPush
             ? "Primeira alteração enviada; há uma edição mais recente aguardando sincronização."
             : `Sincronizado em ${new Date(result.updatedAt || Date.now()).toLocaleString("pt-BR")}.`,
           pendingPush ? "working" : "ok",
         );
-        if (options.manual) showToast(pendingPush ? "Há uma alteração mais recente aguardando envio." : "Dados enviados ao Supabase.");
+        if (options.manual) showToast(pendingPush ? "Há uma alteração mais recente aguardando envio." : "Dados enviados ao Neon.");
         return true;
       } catch (error) {
         pendingPush = true;
         retryPush = true;
         console.error("Falha ao sincronizar Neon", error);
-        setSupabaseStatus(`Falha: ${error.message || "erro desconhecido"}. Alteração local preservada.`, "error");
+        setNeonStatus(`Falha: ${error.message || "erro desconhecido"}. Alteração local preservada.`, "error");
         if (options.manual) showToast("Não consegui sincronizar com o Neon. A alteração local foi preservada.");
         return false;
       } finally {
@@ -304,7 +308,7 @@
       if (busy) return false;
       const key = syncKey();
       if (pendingPush) {
-        setSupabaseStatus("Há uma alteração local aguardando envio; atualização remota adiada.", "working");
+        setNeonStatus("Há uma alteração local aguardando envio; atualização remota adiada.", "working");
         if (options.manual) showToast("Aguarde o envio das alterações locais antes de atualizar.");
         queuePush();
         return false;
@@ -312,7 +316,7 @@
 
       const revisionAtStart = localRevision;
       busy = true;
-      setSupabaseStatus("Atualizando dados do Neon...", "working");
+      setNeonStatus("Atualizando dados do Neon...", "working");
       try {
         const result = await request(SYNC_ENDPOINT, {
           method: "GET",
@@ -322,12 +326,13 @@
         // Se o usuário salvou enquanto o GET estava em andamento, não aplique o snapshot antigo.
         if (pendingPush || localRevision !== revisionAtStart) {
           pendingPush = true;
-          setSupabaseStatus("Alteração local detectada durante a atualização; dados remotos não foram aplicados.", "working");
+          setNeonStatus("Alteração local detectada durante a atualização; dados remotos não foram aplicados.", "working");
           if (options.manual) showToast("A atualização remota foi adiada para preservar sua alteração.");
           return false;
         }
 
         const remote = result.data || {};
+        remoteRevision = Number(result.revision || remoteRevision || 0);
         if (!hasRemoteData(remote) && !options.force) return false;
 
         const localSecurity = {
@@ -360,12 +365,12 @@
         ready = true;
         retryPush = false;
         stopBlobLoops();
-        setSupabaseStatus(`Dados atualizados em ${new Date(remote.updatedAt || result.updatedAt || Date.now()).toLocaleString("pt-BR")}.`, "ok");
+        setNeonStatus(`Dados atualizados em ${new Date(remote.updatedAt || result.updatedAt || Date.now()).toLocaleString("pt-BR")}.`, "ok");
         if (options.manual) showToast("Dados do Neon atualizados.");
         return true;
       } catch (error) {
         console.error("Falha ao atualizar pelo Neon", error);
-        setSupabaseStatus(`Falha: ${error.message || "erro desconhecido"}`, "error");
+        setNeonStatus(`Falha: ${error.message || "erro desconhecido"}`, "error");
         if (options.manual) showToast("Não consegui atualizar pelo Neon.");
         return false;
       } finally {
@@ -375,8 +380,8 @@
     }
 
     async function initialize() {
-      injectSupabaseCard();
-      setSupabaseStatus("Verificando banco Neon...", "working");
+      injectNeonCard();
+      setNeonStatus("Verificando banco Neon...", "working");
       try {
         const health = await request(HEALTH_ENDPOINT, { method: "GET" });
         ready = health.schemaReady === true;
@@ -400,7 +405,7 @@
         } else if (total > 0) {
           await pullNow({ force: true });
         } else {
-          setSupabaseStatus("Conectado. O banco está vazio e aguardando os primeiros cadastros.", "ok");
+          setNeonStatus("Conectado. O banco está vazio e aguardando os primeiros cadastros.", "ok");
         }
 
         clearInterval(pullTimer);
@@ -410,16 +415,16 @@
       } catch (error) {
         ready = false;
         console.error("Inicialização Neon", error);
-        setSupabaseStatus(`Não conectado: ${error.message || "erro desconhecido"}`, "error");
+        setNeonStatus(`Não conectado: ${error.message || "erro desconhecido"}`, "error");
       }
     }
 
-    saveState = function saveStateWithSupabase(options = {}) {
+    saveState = function saveStateWithNeon(options = {}) {
       originalSaveState({ ...options, skipRemote: true });
       markLocalChange();
     };
 
-    flushSaveState = function flushSaveStateWithSupabase(options = {}) {
+    flushSaveState = function flushSaveStateWithNeon(options = {}) {
       originalFlushSaveState({ ...options, skipRemote: true });
       markLocalChange();
     };
@@ -437,10 +442,12 @@
         busy,
         pendingPush,
         localRevision,
+        remoteRevision,
         lastSyncAt: localStorage.getItem(LAST_SYNC_KEY) || "",
       }),
     };
-    window.__saberMaisSupabase = publicSyncApi;
+    window.__saberMaisNeon = publicSyncApi;
+    window.__saberMaisSupabase = publicSyncApi; // alias temporário até a etapa de remoção de legados
     window.__arteDeAprenderSync = publicSyncApi;
 
     window.setTimeout(initialize, 250);

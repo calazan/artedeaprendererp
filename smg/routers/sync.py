@@ -10,16 +10,28 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from .. import APP_VERSION
-from ..audit import capture_backup, record_audit
+from ..audit import record_audit
 from ..auth import OWNER_ADMIN_ROLES, require_role
 from ..config import database_configured, database_provider
 from ..security import sanitize_incoming_state, sync_authorized
-from ..state import database_counts, fetch_critical_state, sync_critical_state
+from ..state import (
+    StateValidationError,
+    SyncConflictError,
+    database_counts,
+    fetch_critical_state,
+    get_sync_revision,
+    sync_critical_state,
+)
 from ..utils import as_dict, as_list
 
 logger = logging.getLogger("smg.routers.sync")
 INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
 router = APIRouter()
+MAX_FUNCTION_BODY_BYTES = 4 * 1024 * 1024
+
+
+class PayloadTooLarge(ValueError):
+    pass
 
 # Domínios mantidos dentro de smg_meta.supplemental_state. Clientes atuais enviam
 # todos eles em cada snapshot. Ausência de um domínio que já possua dados no servidor
@@ -55,18 +67,29 @@ def response(payload: dict, status: int = 200, *, version_header: bool = False) 
     }
     if version_header:
         headers["X-ArteERP-Version"] = APP_VERSION
+    encoded = json.dumps(payload, ensure_ascii=False, default=str, separators=(",", ":")).encode("utf-8")
+    if len(encoded) > MAX_FUNCTION_BODY_BYTES:
+        return JSONResponse(
+            {
+                "ok": False,
+                "code": "PAYLOAD_TOO_LARGE",
+                "error": "A resposta excede o limite seguro da função. Reduza o volume sincronizado.",
+            },
+            status_code=413,
+            headers=headers,
+        )
     return JSONResponse(payload, status_code=status, headers=headers)
 
 
-async def read_json_limited(request: Request, limit: int = 8 * 1024 * 1024) -> dict:
+async def read_json_limited(request: Request, limit: int = MAX_FUNCTION_BODY_BYTES) -> dict:
     raw = await request.body()
     if len(raw) > limit:
-        return {}
+        raise PayloadTooLarge("Payload excede 4 MiB.")
     try:
         value = json.loads(raw.decode("utf-8")) if raw else {}
         return value if isinstance(value, dict) else {}
-    except Exception:
-        return {}
+    except json.JSONDecodeError as exc:
+        raise ValueError("JSON inválido.") from exc
 
 
 def state_etag(state: dict) -> str:
@@ -179,7 +202,16 @@ async def compatibility_sync(request: Request):
             version_header=True,
         )
 
-    body = await read_json_limited(request) if request.method == "POST" else {}
+    try:
+        body = await read_json_limited(request) if request.method == "POST" else {}
+    except PayloadTooLarge:
+        return response(
+            {"ok": False, "code": "PAYLOAD_TOO_LARGE", "error": "A sincronização excede o limite de 4 MiB."},
+            413,
+            version_header=True,
+        )
+    except ValueError:
+        return response({"ok": False, "error": "JSON de sincronização inválido."}, 400, version_header=True)
     if not await sync_authorized(request, body):
         return response(
             {"ok": False, "error": "Autenticação obrigatória."},
@@ -188,6 +220,7 @@ async def compatibility_sync(request: Request):
         )
 
     try:
+        current_revision = await get_sync_revision()
         current = await fetch_critical_state()
         current_etag = state_etag(current)
 
@@ -205,6 +238,7 @@ async def compatibility_sync(request: Request):
                         "notModified": True,
                         "etag": current_etag,
                         "version": APP_VERSION,
+                        "revision": current_revision,
                         "storageAuth": database_provider(),
                     },
                     version_header=True,
@@ -215,7 +249,8 @@ async def compatibility_sync(request: Request):
                     "ok": True,
                     "exists": True,
                     "updatedAt": current.get("updatedAt") or "",
-                    "revision": rev,
+                    "revision": current_revision,
+                    "legacyTimestampRevision": rev,
                     "teacherAttendanceRevision": rev,
                     "eventRosterRevision": rev,
                     "etag": current_etag,
@@ -262,13 +297,20 @@ async def compatibility_sync(request: Request):
 
         deleted = deletions_for_full_snapshot(current, incoming) if (force or expected_etag) else {}
         client_id = str(body.get("clientId") or "legacy-sync-compat")
-        await capture_backup(current, source="pre-sync", client_id=client_id)
-        await sync_critical_state(
+        requested_revision = body.get("baseRevision")
+        expected_revision = current_revision if requested_revision is None else int(requested_revision)
+        destructive = force or any(as_list(value) for value in deleted.values())
+        result = await sync_critical_state(
             {
                 "state": incoming,
                 "deleted": deleted,
                 "clientId": client_id,
                 "source": "legacy-sync-force-postgres" if force else "legacy-sync-compat-postgres",
+                "expectedRevision": expected_revision,
+                "destructive": destructive,
+                "backupSnapshot": current if destructive else {},
+                "backupReason": "pre-force-sync" if force else "pre-sync-deletions",
+                "backupActor": client_id,
             }
         )
         updated = await fetch_critical_state()
@@ -284,7 +326,8 @@ async def compatibility_sync(request: Request):
                 "ok": True,
                 "forced": force,
                 "updatedAt": updated.get("updatedAt") or datetime.utcnow().isoformat() + "Z",
-                "revision": rev,
+                "revision": result["revision"],
+                "legacyTimestampRevision": rev,
                 "teacherAttendanceRevision": rev,
                 "eventRosterRevision": rev,
                 "etag": state_etag(updated),
@@ -295,6 +338,14 @@ async def compatibility_sync(request: Request):
             },
             version_header=True,
         )
+    except SyncConflictError:
+        return response(
+            {"ok": False, "code": "REMOTE_CONFLICT", "error": "Os dados foram alterados em outro dispositivo. Atualize antes de reenviar."},
+            409,
+            version_header=True,
+        )
+    except StateValidationError as exc:
+        return response({"ok": False, "error": str(exc)}, 400, version_header=True)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return response(
@@ -309,12 +360,18 @@ async def compatibility_sync(request: Request):
         )
 
 
+@router.api_route("/api/database-sync", methods=["GET", "POST"])
 @router.api_route("/api/supabase-sync", methods=["GET", "POST"])
 async def direct_supabase_sync(request: Request):
     if not database_configured():
         return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
 
-    body = await read_json_limited(request) if request.method == "POST" else {}
+    try:
+        body = await read_json_limited(request) if request.method == "POST" else {}
+    except PayloadTooLarge:
+        return response({"ok": False, "code": "PAYLOAD_TOO_LARGE", "error": "A sincronização excede o limite de 4 MiB."}, 413)
+    except ValueError:
+        return response({"ok": False, "error": "JSON de sincronização inválido."}, 400)
     if not await sync_authorized(request, body):
         return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
 
@@ -327,25 +384,37 @@ async def direct_supabase_sync(request: Request):
 
     try:
         if request.method == "GET":
-            return response({"ok": True, "data": await fetch_critical_state()})
+            return response({
+                "ok": True,
+                "data": await fetch_critical_state(),
+                "revision": await get_sync_revision(),
+            })
 
         incoming = as_dict(body.get("state"))
         deleted_request = as_dict(body.get("deleted"))
         if any(as_list(value) for value in deleted_request.values()) and not await require_role(request, OWNER_ADMIN_ROLES):
             return response({"ok": False, "error": "Permissão insuficiente para exclusões em sincronização."}, 403)
+        current_revision = await get_sync_revision()
         current = await fetch_critical_state()
         issue = supplemental_snapshot_issue(current, incoming)
         if issue:
             return suspicious_snapshot_response(issue)
 
         client_id = str(body.get("clientId") or "")
-        await capture_backup(current, source=str(body.get("source") or "admin-app"), client_id=client_id)
+        requested_revision = body.get("baseRevision")
+        expected_revision = current_revision if requested_revision is None else int(requested_revision)
+        destructive = any(as_list(value) for value in deleted_request.values())
         result = await sync_critical_state(
             {
                 "state": incoming,
                 "deleted": deleted_request,
                 "clientId": client_id,
                 "source": body.get("source") or "admin-app",
+                "expectedRevision": expected_revision,
+                "destructive": destructive,
+                "backupSnapshot": current if destructive else {},
+                "backupReason": "pre-sync-deletions",
+                "backupActor": client_id,
             }
         )
         await record_audit(
@@ -358,9 +427,17 @@ async def direct_supabase_sync(request: Request):
             {
                 "ok": True,
                 "updatedAt": result["updatedAt"],
+                "revision": result["revision"],
                 "counts": await database_counts(),
             }
         )
+    except SyncConflictError:
+        return response(
+            {"ok": False, "code": "REMOTE_CONFLICT", "error": "Os dados foram alterados em outro dispositivo. Atualize antes de reenviar."},
+            409,
+        )
+    except StateValidationError as exc:
+        return response({"ok": False, "error": str(exc)}, 400)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)

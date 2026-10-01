@@ -15,6 +15,14 @@ from .utils import as_dict, as_list, iso_now, iso_value, jsonable
 SCHEMA_VERSION = 2
 _schema_ready = False
 
+
+class StateValidationError(ValueError):
+    pass
+
+
+class SyncConflictError(RuntimeError):
+    pass
+
 CORE_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS public.smg_students (
   id text PRIMARY KEY,
@@ -92,7 +100,30 @@ async def ensure_core_schema() -> None:
                 """,
                 (Jsonb({"version": SCHEMA_VERSION}),),
             )
+            await cur.execute(
+                """
+                INSERT INTO public.smg_meta(key, value, updated_at)
+                VALUES ('sync_revision', %s, now())
+                ON CONFLICT (key) DO NOTHING
+                """,
+                (Jsonb({"revision": 0}),),
+            )
     _schema_ready = True
+
+
+def safe_decimal(value: Any, field: str) -> Decimal:
+    try:
+        result = Decimal(str(value if value not in (None, "") else 0))
+    except Exception as exc:
+        raise StateValidationError(f"Valor numérico inválido em {field}.") from exc
+    if not result.is_finite():
+        raise StateValidationError(f"Valor numérico inválido em {field}.")
+    return result
+
+
+def safe_float(value: Any, field: str) -> float:
+    result = safe_decimal(value, field)
+    return float(result)
 
 
 def normalize_attendance_record(record: Any) -> dict:
@@ -105,7 +136,7 @@ def normalize_attendance_record(record: Any) -> dict:
         "note": str(item.get("note") or ""),
         "checkIn": str(item.get("checkIn") or ""),
         "checkOut": str(item.get("checkOut") or ""),
-        "hours": float(item.get("hours") or 0),
+        "hours": safe_float(item.get("hours") or 0, "attendance.hours"),
         "updatedAt": str(item.get("updatedAt") or iso_now()),
         "source": str(item.get("source") or "neon-postgres"),
     }
@@ -234,7 +265,7 @@ async def _sync_payments(cur, rows: list[dict], deleted_ids: list[str]) -> None:
                     str(r.get("id") or ""),
                     str(r.get("student_id") or ""),
                     str(r.get("period") or ""),
-                    Decimal(str(r.get("amount") or 0)),
+                    safe_decimal(r.get("amount") or 0, "payments.amount"),
                     str(r.get("status") or "open"),
                     Jsonb(r.get("data") or {}),
                 )
@@ -254,11 +285,36 @@ async def _sync_payments(cur, rows: list[dict], deleted_ids: list[str]) -> None:
         )
 
 
+async def get_sync_revision() -> int:
+    await ensure_core_schema()
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "SELECT COALESCE((value->>'revision')::bigint,0) FROM public.smg_meta WHERE key='sync_revision' LIMIT 1"
+            )
+            row = await cur.fetchone()
+    return int(row[0] or 0) if row else 0
+
+
 async def sync_critical_state(payload: dict) -> dict:
     await ensure_core_schema()
+    from .audit import ensure_audit_schema
+    from .backups import create_backup, ensure_backup_schema
+    from .domains import ensure_domain_schema, migrate_supplemental_state_with_cursor
+
+    await ensure_audit_schema()
+    await ensure_backup_schema()
+    await ensure_domain_schema()
     state = as_dict(payload.get("state"))
     deleted = as_dict(payload.get("deleted"))
     now = iso_now()
+    expected_revision_raw = payload.get("expectedRevision")
+    expected_revision = None if expected_revision_raw is None else int(expected_revision_raw)
+    destructive = payload.get("destructive") is True
+    replace_all = payload.get("replaceAll") is True
+    backup_snapshot = as_dict(payload.get("backupSnapshot"))
+    backup_reason = str(payload.get("backupReason") or "pre-destructive-sync")
+    backup_actor = str(payload.get("backupActor") or "")
 
     students = [
         {"id": str(item["id"]), "data": item, "status": str(item.get("status") or "active")}
@@ -306,6 +362,66 @@ async def sync_critical_state(payload: dict) -> dict:
     async with connection() as conn:
         async with conn.transaction():
             async with conn.cursor() as cur:
+                if expected_revision is None:
+                    await cur.execute(
+                        "SELECT COALESCE((value->>'revision')::bigint,0) FROM public.smg_meta WHERE key='sync_revision' FOR UPDATE"
+                    )
+                    row = await cur.fetchone()
+                    current_revision = int(row[0] or 0) if row else 0
+                    next_revision = current_revision + 1
+                    await cur.execute(
+                        """
+                        UPDATE public.smg_meta
+                        SET value=%s,updated_at=now()
+                        WHERE key='sync_revision'
+                        """,
+                        (Jsonb({"revision": next_revision}),),
+                    )
+                else:
+                    next_revision = expected_revision + 1
+                    await cur.execute(
+                        """
+                        UPDATE public.smg_meta
+                        SET value=%s,updated_at=now()
+                        WHERE key='sync_revision'
+                          AND COALESCE((value->>'revision')::bigint,0)=%s
+                        RETURNING key
+                        """,
+                        (Jsonb({"revision": next_revision}), expected_revision),
+                    )
+                    if not await cur.fetchone():
+                        raise SyncConflictError("REMOTE_CONFLICT")
+
+                if destructive and backup_snapshot:
+                    await create_backup(
+                        backup_snapshot,
+                        backup_reason,
+                        backup_actor,
+                        cur=cur,
+                    )
+
+                if replace_all:
+                    await cur.execute("DELETE FROM public.smg_attendance")
+                    await cur.execute("DELETE FROM public.smg_payments")
+                    await cur.execute("DELETE FROM public.smg_extra_participants")
+                    await cur.execute("DELETE FROM public.smg_extra_events")
+                    await cur.execute("DELETE FROM public.smg_activities")
+                    await cur.execute("DELETE FROM public.smg_students")
+                    await cur.execute(
+                        """
+                        DELETE FROM public.smg_domain_records
+                        WHERE resource_type = ANY(%s::text[])
+                        """,
+                        ([
+                            "other-income", "expenses", "financial-categories",
+                            "bank-accounts", "bank-movements", "calendar-events",
+                            "rental-partners", "rental-contracts", "rental-receivables",
+                            "rental-repasses", "rental-assets", "proposals",
+                            "company-settings", "security-settings", "print-settings",
+                            "integration-settings",
+                        ],),
+                    )
+
                 await _upsert_entity_rows(cur, "smg_students", students, has_status=True)
                 await _upsert_entity_rows(cur, "smg_activities", activities)
                 await _upsert_entity_rows(cur, "smg_extra_events", events)
@@ -350,15 +466,21 @@ async def sync_critical_state(payload: dict) -> dict:
                                 "updatedAt": now,
                                 "clientId": str(payload.get("clientId") or ""),
                                 "source": str(payload.get("source") or "admin-app"),
+                                "revision": next_revision,
                             }
                         ),
                     ),
                 )
-    # Migração progressiva: mantém o formato legado compatível, mas espelha cada
-    # coleção complementar em registros independentes e versionados.
-    from .domains import migrate_supplemental_state
-    domain_result = await migrate_supplemental_state(state)
-    return {"updatedAt": now, "domainRecords": domain_result["migrated"]}
+
+                # O espelho por domínio participa da mesma transação do snapshot,
+                # evitando estado parcialmente migrado em caso de conflito/falha.
+                domain_result = await migrate_supplemental_state_with_cursor(cur, state)
+
+    return {
+        "updatedAt": now,
+        "domainRecords": domain_result["migrated"],
+        "revision": next_revision,
+    }
 
 
 async def fetch_critical_state() -> dict:

@@ -58,7 +58,7 @@ async def record_audit(
     details: dict | None = None,
 ) -> None:
     await ensure_audit_schema()
-    session = session_from_request(request) if request is not None else None
+    session = await session_from_request(request) if request is not None else None
     actor = str((session or {}).get("sub") or "server")
     safe_details = {
         key: value

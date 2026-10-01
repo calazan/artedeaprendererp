@@ -3,26 +3,35 @@
   if (window.__arteDeAprenderHealthIndicatorLoaded) return;
   window.__arteDeAprenderHealthIndicatorLoaded = true;
 
-  const STORAGE_KEY = "arteDeAprenderERP.v4";
-  const AUTO_BACKUP_PREFIX = "arteDeAprenderERP.autoBackup.";
-  const AUTO_BACKUP_LAST_KEY = "arteDeAprenderERP.autoBackup.last";
+  let backupStatus = { checkedAt: 0, busy: false, last: null, denied: false, error: "" };
 
-  function localDateISO(date = new Date()) {
-    const adjusted = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
-    return adjusted.toISOString().slice(0, 10);
-  }
-
-  function latestBackup() {
-    const lastKey = localStorage.getItem(AUTO_BACKUP_LAST_KEY) || "";
-    const raw = lastKey ? localStorage.getItem(lastKey) : "";
-    let timestamp = "";
-    if (raw) {
-      try {
-        const parsed = JSON.parse(raw);
-        timestamp = String(parsed?.exportedAt || "");
-      } catch {}
+  async function refreshBackupFromServer(force = false) {
+    if (backupStatus.busy) return;
+    if (!force && Date.now() - backupStatus.checkedAt < 60_000) return;
+    backupStatus.busy = true;
+    try {
+      const response = await fetch("/api/backups?limit=1", {
+        method: "GET",
+        cache: "no-store",
+        credentials: "same-origin",
+        headers: { Accept: "application/json" },
+      });
+      if (response.status === 403) {
+        backupStatus = { checkedAt: Date.now(), busy: false, last: null, denied: true, error: "" };
+        return;
+      }
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok || data.ok === false) throw new Error(data.detail || data.error || "Falha ao consultar backups.");
+      backupStatus = {
+        checkedAt: Date.now(),
+        busy: false,
+        last: Array.isArray(data.items) ? data.items[0] || null : null,
+        denied: false,
+        error: "",
+      };
+    } catch (error) {
+      backupStatus = { checkedAt: Date.now(), busy: false, last: null, denied: false, error: error?.message || "Falha ao consultar backups." };
     }
-    return { lastKey, raw, timestamp };
   }
 
   function mount() {
@@ -73,30 +82,28 @@
   }
 
   function updateBackup() {
-    const stateSaved = Boolean(localStorage.getItem(STORAGE_KEY));
-    const now = new Date();
-    const todayKey = AUTO_BACKUP_PREFIX + localDateISO(now);
-    const todayBackup = localStorage.getItem(todayKey);
-    const last = latestBackup();
-
-    if (!stateSaved) {
-      setPill("#backupHealthPill", "#backupHealthText", "working", "Backup aguardando", "Os dados locais ainda estão sendo inicializados.");
+    refreshBackupFromServer().catch(() => {});
+    if (backupStatus.busy && !backupStatus.checkedAt) {
+      setPill("#backupHealthPill", "#backupHealthText", "working", "Backup verificando", "Consultando snapshots protegidos no servidor.");
       return;
     }
-
-    if (now.getHours() >= 18 && !todayBackup) {
-      setPill("#backupHealthPill", "#backupHealthText", "working", "Backup em preparo", "O backup diário será criado automaticamente nesta sessão.");
+    if (backupStatus.denied) {
+      setPill("#backupHealthPill", "#backupHealthText", "ok", "Backup protegido", "Os backups do servidor são administrados apenas por owner/admin.");
       return;
     }
-
-    let detail = "Dados locais protegidos automaticamente.";
-    if (last.timestamp) {
-      const date = new Date(last.timestamp);
-      if (!Number.isNaN(date.getTime())) detail = "Último backup diário: " + date.toLocaleString("pt-BR");
-    } else if (last.lastKey) {
-      detail = "Último backup diário: " + last.lastKey.replace(AUTO_BACKUP_PREFIX, "").split("-").reverse().join("/");
+    if (backupStatus.error) {
+      setPill("#backupHealthPill", "#backupHealthText", "working", "Backup aguardando", backupStatus.error);
+      return;
     }
-    setPill("#backupHealthPill", "#backupHealthText", "ok", todayBackup ? "Backup diário OK" : "Backup ativo", detail);
+    if (backupStatus.last?.createdAt) {
+      const date = new Date(backupStatus.last.createdAt);
+      const detail = Number.isNaN(date.getTime())
+        ? "Snapshot de proteção disponível no servidor."
+        : "Último snapshot protegido: " + date.toLocaleString("pt-BR");
+      setPill("#backupHealthPill", "#backupHealthText", "ok", "Backup servidor OK", detail);
+      return;
+    }
+    setPill("#backupHealthPill", "#backupHealthText", "ok", "Backup servidor ativo", "Snapshots são criados antes de sincronizações destrutivas e restaurações.");
   }
 
   function updateSync() {
@@ -140,7 +147,7 @@
     if (document.querySelector("#systemHealthIndicator")) clearInterval(mountTimer);
   }, 500);
   setInterval(refresh, 2000);
-  window.addEventListener("focus", refresh);
+  window.addEventListener("focus", () => { refreshBackupFromServer(true).catch(() => {}); refresh(); });
   document.addEventListener("visibilitychange", () => {
     if (!document.hidden) refresh();
   });

@@ -37,23 +37,67 @@ async def ensure_backup_schema() -> None:
     _schema_ready = True
 
 
-async def create_backup(snapshot: dict, reason: str = "manual", created_by: str = "") -> dict:
-    await ensure_backup_schema()
+async def _create_backup_with_cursor(cur, snapshot: dict, reason: str = "manual", created_by: str = "") -> dict:
     payload = jsonable(snapshot)
     encoded = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     checksum = hashlib.sha256(encoded).hexdigest()
-    async with connection() as conn:
-        async with conn.cursor() as cur:
-            await cur.execute(
-                """
-                INSERT INTO public.smg_manual_backups(checksum,reason,snapshot,created_by)
-                VALUES (%s,%s,%s,%s)
-                RETURNING id,created_at
-                """,
-                (checksum, str(reason or "manual")[:80], Jsonb(payload), str(created_by or "")[:160]),
-            )
-            row = await cur.fetchone()
+    await cur.execute(
+        """
+        INSERT INTO public.smg_manual_backups(checksum,reason,snapshot,created_by)
+        VALUES (%s,%s,%s,%s)
+        RETURNING id,created_at
+        """,
+        (checksum, str(reason or "manual")[:80], Jsonb(payload), str(created_by or "")[:160]),
+    )
+    row = await cur.fetchone()
     return {"id": str(row[0]), "checksum": checksum, "createdAt": iso_value(row[1])}
+
+
+async def _prune_backups_with_cursor(cur) -> None:
+    # Retém todos os snapshots dos últimos 30 dias e, dentre os mais antigos,
+    # um snapshot mensal por até 12 meses.
+    await cur.execute(
+        """
+        WITH ranked AS (
+          SELECT id, created_at,
+                 row_number() OVER (
+                   PARTITION BY date_trunc('month', created_at)
+                   ORDER BY created_at DESC
+                 ) AS month_rank
+          FROM public.smg_manual_backups
+        ),
+        keep_monthly AS (
+          SELECT id
+          FROM ranked
+          WHERE created_at < now() - interval '30 days'
+            AND created_at >= date_trunc('month', now()) - interval '12 months'
+            AND month_rank = 1
+        )
+        DELETE FROM public.smg_manual_backups b
+        WHERE b.created_at < now() - interval '30 days'
+          AND b.id NOT IN (SELECT id FROM keep_monthly)
+        """
+    )
+
+
+async def create_backup(
+    snapshot: dict,
+    reason: str = "manual",
+    created_by: str = "",
+    *,
+    cur=None,
+) -> dict:
+    await ensure_backup_schema()
+    if cur is not None:
+        result = await _create_backup_with_cursor(cur, snapshot, reason, created_by)
+        await _prune_backups_with_cursor(cur)
+        return result
+    async with connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as own_cur:
+                result = await _create_backup_with_cursor(own_cur, snapshot, reason, created_by)
+                await _prune_backups_with_cursor(own_cur)
+                return result
 
 
 async def list_backups(limit: int = 50) -> list[dict]:
@@ -109,3 +153,18 @@ async def get_backup(backup_id: str) -> dict | None:
         "createdBy": row[3],
         "createdAt": iso_value(row[4]),
     }
+
+
+async def delete_backup(backup_id: str) -> bool:
+    await ensure_backup_schema()
+    try:
+        parsed = str(uuid.UUID(str(backup_id)))
+    except ValueError:
+        return False
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                "DELETE FROM public.smg_manual_backups WHERE id=%s::uuid RETURNING id",
+                (parsed,),
+            )
+            return (await cur.fetchone()) is not None

@@ -23,8 +23,13 @@ from ..auth import ADMIN_ROLES, OWNER_ADMIN_ROLES, require_role
 logger = logging.getLogger("smg.routers.employees")
 INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
 router = APIRouter()
-MAX_FILE_BYTES = 6 * 1024 * 1024
+MAX_JSON_BODY_BYTES = 4 * 1024 * 1024
+MAX_FILE_BYTES = 2_750_000
 ALLOWED_MIME = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
+
+
+class PayloadTooLarge(ValueError):
+    pass
 
 
 def json_response(payload: dict, status: int = 200):
@@ -35,15 +40,15 @@ def json_response(payload: dict, status: int = 200):
     )
 
 
-async def body_json(request: Request, max_bytes: int = 10 * 1024 * 1024) -> dict:
+async def body_json(request: Request, max_bytes: int = MAX_JSON_BODY_BYTES) -> dict:
     raw = await request.body()
     if len(raw) > max_bytes:
-        return {}
+        raise PayloadTooLarge("Corpo da requisição excede 4 MiB.")
     try:
         value = json.loads(raw.decode("utf-8")) if raw else {}
         return value if isinstance(value, dict) else {}
-    except Exception:
-        return {}
+    except json.JSONDecodeError as exc:
+        raise ValueError("JSON inválido.") from exc
 
 
 def text(value="", max_len=300):
@@ -63,7 +68,7 @@ async def employees_api(request: Request):
         if request.method == "GET":
             employees = await list_employees()
             return json_response({"ok": True, "employees": employees, "count": len(employees)})
-        body = await body_json(request, 4 * 1024 * 1024)
+        body = await body_json(request)
         deleted_ids = body.get("deletedIds") if isinstance(body.get("deletedIds"), list) else []
         if deleted_ids and str(session.get("role")) not in OWNER_ADMIN_ROLES:
             return json_response({"ok": False, "error": "Permissão insuficiente para excluir funcionários."}, 403)
@@ -72,6 +77,14 @@ async def employees_api(request: Request):
             deleted_ids,
         )
         return json_response({"ok": True, **result})
+    except PayloadTooLarge:
+        return json_response({"ok": False, "error": "A requisição excede o limite seguro de 4 MiB."}, 413)
+    except ValueError:
+        return json_response({"ok": False, "error": "JSON inválido."}, 400)
+    except PayloadTooLarge:
+        return json_response({"ok": False, "error": "A requisição excede o limite seguro de 4 MiB."}, 413)
+    except ValueError:
+        return json_response({"ok": False, "error": "JSON inválido."}, 400)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return json_response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
@@ -135,7 +148,7 @@ async def employee_documents_api(request: Request):
         if not content:
             return json_response({"ok": False, "error": "Arquivo inválido."}, 400)
         if len(content) > MAX_FILE_BYTES:
-            return json_response({"ok": False, "error": "O arquivo deve ter no máximo 6 MB."}, 413)
+            return json_response({"ok": False, "error": "O arquivo deve ter no máximo 2,75 MB neste modo de upload."}, 413)
 
         document = await save_employee_document(
             {
