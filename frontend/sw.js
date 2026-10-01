@@ -21,7 +21,7 @@ const PRECACHE = [
   "./extra-event-individual-report-fix.js?v=1",
   "./overdue-payment-indicator-fix.js?v=1",
   "./employee-management.js?v=3",
-  "./main-menu-colors.js?v=3",
+  "./main-menu-colors.js?v=20261001",
   "./payment-deletion-persistence-fix.js?v=2",
   "./rental-repasses-enhancement.js?v=1",
   "./rental-repass-pay-ui-fix.js?v=1",
@@ -43,8 +43,6 @@ const PRECACHE = [
   "./whatsapp-reminders.css?v=1",
   "./main-menu-colors.css?v=20261001",
   "./manifest.json?v=3",
-  "./logo-circular.webp?v=20261001",
-  "./app-icon-192.png?v=20261001",
   "./banner-login.webp?v=20261001",
   "./banner-dashboard.webp?v=20261001",
   "./banner-precadastro.webp?v=20261001",
@@ -124,7 +122,7 @@ async function injectShellHTML(response) {
   if (!contentType.includes("text/html")) return response;
   let html = await response.text();
   if (!html.includes("main-menu-colors.css")) {
-    const tag = '<link rel="stylesheet" href="/main-menu-colors.css?v=53" data-main-menu-colors-direct />';
+    const tag = '<link rel="stylesheet" href="/main-menu-colors.css?v=20261001" data-main-menu-colors-direct />';
     html = html.includes("</head>") ? html.replace("</head>", `  ${tag}\n  </head>`) : `${tag}${html}`;
   }
   if (!html.includes("pre-app-state-guard.js")) {

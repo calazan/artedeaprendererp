@@ -33,7 +33,9 @@ def test_frontend_is_bundled_locally_in_this_repository():
     assert frontend == (ROOT_DIR / "frontend").resolve()
     assert frontend.is_dir()
     assert (frontend / "index.html").is_file()
-    assert (frontend / "menu-brand.png").is_file()
+    assert (frontend / "logo-horizontal.webp").is_file()
+    assert (frontend / "logo-circular.webp").is_file()
+    assert (frontend / "banner-dashboard.webp").is_file()
 
 
 def test_no_operational_dependency_on_legacy_smg_repository_or_deploy():
