@@ -25,9 +25,9 @@
     if (window.__saberSupabaseAdminLoaded) return;
     appendScript({
       selector: 'script[data-supabase-admin-sync]',
-      src: "supabase-admin-sync.js?v=4",
+      src: "supabase-admin-sync.js?v=5",
       datasetKey: "supabaseAdminSync",
-      errorMessage: "Não foi possível carregar a sincronização Python/Supabase.",
+      errorMessage: "Não foi possível carregar a sincronização com o Neon.",
       onLoad: hideLegacyRemoteCard,
     });
   }

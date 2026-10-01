@@ -28,8 +28,8 @@
     if (window.__saberSupabaseAdminLoaded) return;
     window.__saberSupabaseAdminLoaded = true;
 
-    const HEALTH_ENDPOINT = "/api/supabase-health";
-    const SYNC_ENDPOINT = "/api/supabase-sync";
+    const HEALTH_ENDPOINT = "/api/database-health";
+    const SYNC_ENDPOINT = "/api/database-sync";
     const SNAPSHOT_KEY = "arteDeAprenderERP.supabase.snapshot.v2";
     const LAST_SYNC_KEY = "arteDeAprenderERP.supabase.lastSyncAt";
     const CLIENT_KEY = "arteDeAprenderERP.supabase.clientId";
@@ -182,7 +182,7 @@
       if (sync) {
         sync.autoSync = false;
         sync.enabled = false;
-        sync.lastStatus = "Supabase ativo para os dados operacionais e financeiros. Vercel Blob mantido apenas como legado/backup manual.";
+        sync.lastStatus = "Neon ativo para os dados operacionais e financeiros.";
       }
       try { renderRemoteSyncSettings(); } catch {}
     }
@@ -227,25 +227,18 @@
         return false;
       }
       const key = syncKey();
-      if (key.length < 6) {
-        pendingPush = true;
-        setSupabaseStatus("Informe novamente a chave de sincronização nas configurações.", "warn");
-        if (options.manual) showToast("A chave de sincronização local está vazia.");
-        return false;
-      }
-
       const payload = criticalState();
       const nextFingerprint = fingerprint(payload);
       if (!options.force && !pendingPush && nextFingerprint === lastFingerprint) return true;
 
       const revisionAtStart = localRevision;
       busy = true;
-      setSupabaseStatus("Enviando alterações para o Supabase...", "working");
+      setSupabaseStatus("Sincronizando alterações...", "working");
       try {
         const deleted = deletedSinceLast(payload);
         const result = await request(SYNC_ENDPOINT, {
           method: "POST",
-          headers: { "x-sync-key": key },
+          headers: key.length >= 32 ? { "x-sync-key": key } : {},
           body: JSON.stringify({
             state: payload,
             deleted,
@@ -271,9 +264,9 @@
       } catch (error) {
         pendingPush = true;
         retryPush = true;
-        console.error("Falha ao sincronizar Supabase", error);
+        console.error("Falha ao sincronizar Neon", error);
         setSupabaseStatus(`Falha: ${error.message || "erro desconhecido"}. Alteração local preservada.`, "error");
-        if (options.manual) showToast("Não consegui enviar ao Supabase. A alteração local foi preservada.");
+        if (options.manual) showToast("Não consegui sincronizar com o Neon. A alteração local foi preservada.");
         return false;
       } finally {
         busy = false;
@@ -310,21 +303,20 @@
     async function pullNow(options = {}) {
       if (busy) return false;
       const key = syncKey();
-      if (key.length < 6) return false;
       if (pendingPush) {
         setSupabaseStatus("Há uma alteração local aguardando envio; atualização remota adiada.", "working");
-        if (options.manual) showToast("Envie as alterações locais antes de baixar do Supabase.");
+        if (options.manual) showToast("Aguarde o envio das alterações locais antes de atualizar.");
         queuePush();
         return false;
       }
 
       const revisionAtStart = localRevision;
       busy = true;
-      setSupabaseStatus("Baixando dados do Supabase...", "working");
+      setSupabaseStatus("Atualizando dados do Neon...", "working");
       try {
         const result = await request(SYNC_ENDPOINT, {
           method: "GET",
-          headers: { "x-sync-key": key },
+          headers: key.length >= 32 ? { "x-sync-key": key } : {},
         });
 
         // Se o usuário salvou enquanto o GET estava em andamento, não aplique o snapshot antigo.
@@ -369,12 +361,12 @@
         retryPush = false;
         stopBlobLoops();
         setSupabaseStatus(`Dados atualizados em ${new Date(remote.updatedAt || result.updatedAt || Date.now()).toLocaleString("pt-BR")}.`, "ok");
-        if (options.manual) showToast("Dados do Supabase aplicados.");
+        if (options.manual) showToast("Dados do Neon atualizados.");
         return true;
       } catch (error) {
-        console.error("Falha ao baixar Supabase", error);
+        console.error("Falha ao atualizar pelo Neon", error);
         setSupabaseStatus(`Falha: ${error.message || "erro desconhecido"}`, "error");
-        if (options.manual) showToast("Não consegui baixar do Supabase.");
+        if (options.manual) showToast("Não consegui atualizar pelo Neon.");
         return false;
       } finally {
         busy = false;
@@ -384,7 +376,7 @@
 
     async function initialize() {
       injectSupabaseCard();
-      setSupabaseStatus("Preparando banco Supabase...", "working");
+      setSupabaseStatus("Verificando banco Neon...", "working");
       try {
         const health = await request(HEALTH_ENDPOINT, { method: "GET" });
         ready = health.schemaReady === true;
@@ -417,7 +409,7 @@
         }, PULL_INTERVAL_MS);
       } catch (error) {
         ready = false;
-        console.error("Inicialização Supabase", error);
+        console.error("Inicialização Neon", error);
         setSupabaseStatus(`Não conectado: ${error.message || "erro desconhecido"}`, "error");
       }
     }
@@ -437,7 +429,7 @@
       window.flushSaveState = flushSaveState;
     } catch {}
 
-    window.__saberMaisSupabase = {
+    const publicSyncApi = {
       syncNow: () => syncNow({ force: true, manual: true }),
       pullNow: () => pullNow({ force: true, manual: true }),
       status: () => ({
@@ -448,6 +440,8 @@
         lastSyncAt: localStorage.getItem(LAST_SYNC_KEY) || "",
       }),
     };
+    window.__saberMaisSupabase = publicSyncApi;
+    window.__arteDeAprenderSync = publicSyncApi;
 
     window.setTimeout(initialize, 250);
 

@@ -1229,7 +1229,7 @@
           <section class="panel glass-card">
             <div class="panel-head">
               <h2>Configurações e segurança</h2>
-              <span>Este sistema salva localmente e pode sincronizar backup remoto pela Vercel</span>
+              <span>Backup local e sincronização com o banco funcionam automaticamente</span>
             </div>
             <div class="settings-grid settings-grid-tabs">
               <div class="settings-tab-header glass-card">
@@ -1246,8 +1246,6 @@
                 <button type="button" class="settings-subtab" data-settings-pane="import">Dados de crianças</button>
                 <button type="button" class="settings-subtab" data-settings-pane="categories">Categorias</button>
                 <button type="button" class="settings-subtab" data-settings-pane="backup">Backup</button>
-                <button type="button" class="settings-subtab" data-settings-pane="remote">Sincronização remota</button>
-                <button type="button" class="settings-subtab" data-settings-pane="prints">Impressões</button>
                 <button type="button" class="settings-subtab" data-settings-pane="security">Segurança</button>
               </div>
 
@@ -1487,104 +1485,6 @@
               </div>
               </div>
 
-              <div class="settings-pane" data-settings-pane-content="remote">
-                <div class="settings-card remote-sync-card">
-                  <h3>Sincronização remota Vercel</h3>
-                  <p>Use esta área para manter uma cópia remota dos dados e sincronizar entre casa, escola e outros computadores.</p>
-
-                  <form id="remoteSyncForm" class="remote-sync-form">
-                    <label class="security-toggle-row" for="remoteSyncEnabled">
-                      <span>
-                        <strong>Ativar sincronização remota</strong>
-                        <small>O app continua salvando localmente e também poderá enviar backup para a Vercel.</small>
-                      </span>
-                      <input id="remoteSyncEnabled" type="checkbox" />
-                    </label>
-
-                    <label class="security-toggle-row" for="remoteSyncAuto">
-                      <span>
-                        <strong>Sincronizar automaticamente ao salvar</strong>
-                        <small>Cada alteração é enviada e outros computadores abertos verificam novidades automaticamente a cada poucos segundos.</small>
-                      </span>
-                      <input id="remoteSyncAuto" type="checkbox" />
-                    </label>
-
-                    <label class="security-toggle-row" for="remoteSyncPullOnOpen">
-                      <span>
-                        <strong>Buscar remoto ao abrir</strong>
-                        <small>Ao abrir ou voltar para a aba, baixa a versão remota mais recente quando não há alterações locais pendentes.</small>
-                      </span>
-                      <input id="remoteSyncPullOnOpen" type="checkbox" />
-                    </label>
-
-                    <label class="remote-sync-key-field">
-                      Chave de sincronização
-                      <input id="remoteSyncKey" type="password" autocomplete="off" placeholder="Digite a mesma chave configurada na Vercel" />
-                    </label>
-
-                    <div class="remote-sync-status-box">
-                      <span>Status</span>
-                      <strong id="remoteSyncStatus">Não configurado.</strong>
-                      <small>Último envio: <b id="remoteSyncLastPush">Nunca</b></small>
-                      <small>Último download: <b id="remoteSyncLastPull">Nunca</b></small>
-                    </div>
-
-                    <div class="form-actions">
-                      <button type="submit">Salvar configuração</button>
-                      <button type="button" class="secondary" id="remoteSyncTest">Testar conexão</button>
-                      <button type="button" class="secondary" id="remoteSyncPushNow">Enviar agora para a nuvem</button>
-                      <button type="button" class="secondary" id="remoteSyncPullNow">Baixar agora da nuvem</button>
-                    </div>
-                  </form>
-
-                  <small class="remote-sync-note">
-                    Os dados são sincronizados diretamente pelo backend Python com o Supabase. A autenticação da sessão protege as operações; nenhuma chave precisa ser digitada no navegador.
-                  </small>
-                </div>
-              </div>
-
-              <div class="settings-pane" data-settings-pane-content="prints">
-                <div class="settings-pane-grid">
-                  
-                  <div class="settings-card settings-card-compact">
-                    <h3>Aparência do sistema</h3>
-                    <p>Escolha o visual do sistema para trabalhar melhor durante o dia ou à noite.</p>
-                    <label>
-                      Tema do sistema
-                      <select id="themeMode">
-                        <option value="light">Modo claro</option>
-                        <option value="dark">Modo escuro</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div class="settings-card zebra-label-settings-card">
-                <h3>Etiqueta Zebra ZD230</h3>
-                <p>Configure o tamanho da etiqueta de mensalidade paga. O padrão recomendado para Zebra é 40 x 25 mm, mas você pode alterar.</p>
-                <form id="labelSettingsForm" class="label-settings-form">
-                  <label>
-                    Largura
-                    <input id="labelWidth" type="number" min="10" step="1" />
-                  </label>
-                  <label>
-                    Altura
-                    <input id="labelHeight" type="number" min="10" step="1" />
-                  </label>
-                  <label>
-                    Unidade
-                    <select id="labelUnit">
-                      <option value="mm">mm</option>
-                      <option value="cm">cm</option>
-                    </select>
-                  </label>
-                  <div class="form-actions">
-                    <button type="submit">Salvar tamanho da etiqueta</button>
-                  </div>
-                </form>
-                <small>A etiqueta mostra somente: valor pago, mês e quantidade de horas utilizadas.</small>
-              </div>
-                </div>
-              </div>
-
               <div class="settings-pane" data-settings-pane-content="security">
                 <div class="settings-card security-access-card">
                   <h3>Controle de acesso</h3>
@@ -1632,7 +1532,8 @@
     <script src="smg-confirm-dialog.js?v=1"></script>
     <script src="app.min.js?v=469-a3p3"></script>
     <script src="local-persistence-reliability.js?v=1"></script>
-    <script src="remote-sync-key-fix.js?v=6"></script>
+    <script src="remote-sync-key-fix.js?v=8"></script>
+    <script src="system-health-indicator.js?v=1"></script>
 
     <script>
       if ("serviceWorker" in navigator) {
