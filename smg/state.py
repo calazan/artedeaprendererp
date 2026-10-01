@@ -17,7 +17,9 @@ _schema_ready = False
 
 
 class StateValidationError(ValueError):
-    pass
+    def __init__(self, public_message: str):
+        self.public_message = str(public_message or "Dados inválidos.")[:300]
+        super().__init__(self.public_message)
 
 
 class SyncConflictError(RuntimeError):

@@ -345,7 +345,7 @@ async def compatibility_sync(request: Request):
             version_header=True,
         )
     except StateValidationError as exc:
-        return response({"ok": False, "error": str(exc)}, 400, version_header=True)
+        return response({"ok": False, "error": exc.public_message}, 400, version_header=True)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return response(
@@ -437,7 +437,7 @@ async def direct_supabase_sync(request: Request):
             409,
         )
     except StateValidationError as exc:
-        return response({"ok": False, "error": str(exc)}, 400)
+        return response({"ok": False, "error": exc.public_message}, 400)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
