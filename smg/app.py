@@ -10,7 +10,6 @@ load_dotenv()
 from . import APP_VERSION
 from . import task_store as _task_store
 from .auth import router as auth_router
-from .bootstrap_temp import router as bootstrap_temp_router
 from .config import database_provider
 from .db import close_pool
 from .push_compat import send_web_push as _compatible_send_web_push
@@ -46,7 +45,6 @@ app = FastAPI(
 )
 
 for router in (
-    bootstrap_temp_router,
     auth_router,
     health_router,
     integrity_router,
