@@ -74,3 +74,14 @@ O navegador pode manter apenas preferências não pessoais enquanto a sessão es
 | Alterar configuração/destinatários do WhatsApp | Sim | Sim | Não | Não |
 
 O papel efetivo é consultado no Neon em cada autorização, com cache em memória de no máximo 60 segundos. O papel gravado no cookie não é usado como fonte de autorização. Se o banco de autorização estiver indisponível, o acesso é negado.
+
+
+## Proteção de dados sensíveis
+
+O pré-cadastro protege em nível de aplicação com AES-256-GCM o CPF do responsável, detalhes de saúde/medicação/diagnóstico e documentos de pessoas autorizadas. A chave `DATA_ENCRYPTION_KEY` é obrigatória para criar ou consultar esses registros e não deve ser versionada.
+
+Registros legados em texto simples devem ser migrados, depois de configurar a mesma chave no ambiente, com:
+
+`PYTHONPATH=. python scripts/migrate_preregistration_encryption.py`
+
+Pré-cadastros rejeitados são excluídos após `PREREG_REJECTED_RETENTION_DAYS` (30 dias por padrão), e buckets de rate limit expirados são limpos pela rotina de retenção.

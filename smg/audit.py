@@ -5,7 +5,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from .auth import session_from_request
+from .auth import get_client_ip, session_from_request
 from .db import connection
 from .utils import as_dict
 
@@ -43,6 +43,11 @@ async def ensure_audit_schema() -> None:
     global _schema_ready
     if _schema_ready:
         return
+    if request is not None:
+        safe_details.setdefault("ip", get_client_ip(request))
+        user_agent = str(request.headers.get("user-agent") or "").strip()
+        if user_agent:
+            safe_details.setdefault("userAgent", user_agent[:240])
     async with connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(AUDIT_SCHEMA_SQL)
@@ -56,10 +61,11 @@ async def record_audit(
     *,
     entity_id: str = "",
     details: dict | None = None,
+    actor_id: str = "",
 ) -> None:
     await ensure_audit_schema()
     session = await session_from_request(request) if request is not None else None
-    actor = str((session or {}).get("sub") or "server")
+    actor = str(actor_id or (session or {}).get("sub") or "server")
     safe_details = {
         key: value
         for key, value in as_dict(details).items()

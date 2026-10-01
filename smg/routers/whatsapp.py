@@ -11,6 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from ..auth import OWNER_ADMIN_ROLES, require_role
+from ..audit import record_audit
 from ..config import whatsapp_provider_config
 from ..security import safe_equal, sync_authorized
 from ..utils import as_dict, iso_now
@@ -181,12 +182,14 @@ async def handle_admin(request: Request, raw: bytes):
         if not await require_role(request, OWNER_ADMIN_ROLES):
             return response({"ok": False, "error": "Permissão insuficiente para alterar a configuração do WhatsApp."}, 403)
         settings = await save_config(as_dict(body.get("settings")) or body)
+        await record_audit(request, "whatsapp", "save_config", details={"enabled": bool(settings.get("enabled"))})
         return response({"ok": True, "settings": settings, "provider": provider_status()})
 
     if action == "save-recipients":
         if not await require_role(request, OWNER_ADMIN_ROLES):
             return response({"ok": False, "error": "Permissão insuficiente para alterar destinatários do WhatsApp."}, 403)
         recipients = await save_recipients(body.get("studentIds"))
+        await record_audit(request, "whatsapp", "save_recipients", details={"count": len(recipients)})
         return response({"ok": True, "recipients": recipients})
 
     if action == "test":

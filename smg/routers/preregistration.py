@@ -10,10 +10,13 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from ..audit import record_audit
 from ..auth import get_client_ip
+from ..crypto import DataEncryptionConfigurationError, encryption_configured
 from ..preregistration import (
     configured,
     consume_rate_limit,
+    cleanup_retention,
     counts,
     create_record,
     find_recent_duplicate,
@@ -257,6 +260,8 @@ def normalize_submission(body: dict, request: Request):
 async def preregistration_api(request: Request):
     if not configured():
         return response({"ok": False, "error": "O banco de dados ainda não está configurado."}, 503)
+    if not encryption_configured():
+        return response({"ok": False, "error": "Proteção de dados ainda não configurada no servidor."}, 503)
     try:
         if request.method == "POST":
             body = await read_body(request)
@@ -284,12 +289,24 @@ async def preregistration_api(request: Request):
                 )
 
             record = await create_record(str(uuid.uuid4()), protocol(), data)
+            await cleanup_retention()
+            try:
+                await record_audit(
+                    request,
+                    "pre_registration",
+                    "create",
+                    entity_id=record["id"],
+                    details={"protocol": record["protocol"]},
+                )
+            except Exception:
+                pass
             return response({"ok": True, "protocol": record["protocol"], "status": record["status"]}, 201)
 
         if not await legacy_internal_authorized(request):
             return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
 
         if request.method == "GET":
+            await cleanup_retention()
             status = text(request.query_params.get("status"), 30)
             records = await list_records(status, request.query_params.get("limit"))
             return response({"ok": True, "records": records, "counts": await counts()})
@@ -305,7 +322,16 @@ async def preregistration_api(request: Request):
             body.get("data") if isinstance(body.get("data"), dict) else None,
             text(body.get("enrolledStudentId"), 100),
         )
+        await record_audit(
+            request,
+            "pre_registration",
+            "status_change",
+            entity_id=record_id,
+            details={"status": status},
+        )
         return response({"ok": True, "record": record, "counts": await counts()})
+    except DataEncryptionConfigurationError:
+        return response({"ok": False, "error": "Proteção de dados indisponível."}, 503)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
@@ -314,7 +340,7 @@ async def preregistration_api(request: Request):
 @router.get("/api/pre-registration-health")
 async def preregistration_health():
     if not configured():
-        return response({"ok": False, "schemaReady": False, "error": "Supabase não configurado."}, 503)
+        return response({"ok": False, "schemaReady": False, "error": "Banco Neon não configurado."}, 503)
     try:
         await counts()
         return response({"ok": True, "schemaReady": True})

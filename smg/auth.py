@@ -306,6 +306,11 @@ async def api_login(request: Request):
     except Exception:
         return JSONResponse({"ok": False, "error": "Serviço de autenticação indisponível."}, status_code=503)
     if not account:
+        try:
+            from .audit import record_audit
+            await record_audit(request, "auth", "login_failed", details={"email": email})
+        except Exception:
+            pass
         return JSONResponse({"ok": False, "error": "E-mail ou senha inválidos."}, status_code=401)
     if account["role"] not in TEACHER_ROLES:
         return JSONResponse({"ok": False, "error": "Usuário sem acesso ativo ao ERP."}, status_code=403)
@@ -316,6 +321,19 @@ async def api_login(request: Request):
         return JSONResponse({"ok": False, "error": "Segredo de sessão não configurado."}, status_code=503)
     except Exception:
         return JSONResponse({"ok": False, "error": "Falha ao criar sessão."}, status_code=500)
+
+    try:
+        from .audit import record_audit
+        await record_audit(
+            request,
+            "auth",
+            "login_success",
+            entity_id=account["userId"],
+            details={"role": account["role"]},
+            actor_id=account["userId"],
+        )
+    except Exception:
+        pass
 
     response = JSONResponse(
         {"ok": True, "role": account["role"], "name": account["displayName"]},
@@ -345,6 +363,19 @@ async def api_logout(request: Request):
             clear_membership_cache(str(payload.get("sub") or ""))
         except Exception:
             revoked = False
+    if payload:
+        try:
+            from .audit import record_audit
+            await record_audit(
+                request,
+                "auth",
+                "logout",
+                entity_id=str(payload.get("sub") or ""),
+                details={"revoked": revoked},
+                actor_id=str(payload.get("sub") or ""),
+            )
+        except Exception:
+            pass
     response = JSONResponse(
         {"ok": revoked},
         status_code=200 if revoked else 503,

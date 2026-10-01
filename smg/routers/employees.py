@@ -10,6 +10,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse, Response
 
+from ..audit import record_audit
 from ..employees import (
     delete_employee_document,
     get_employee_document,
@@ -59,6 +60,18 @@ def safe_filename(value="arquivo"):
     return re.sub(r'[\\/:*?"<>|]', "-", text(value, 220)) or "arquivo"
 
 
+def detected_mime(content: bytes) -> str:
+    if content.startswith(b"%PDF-"):
+        return "application/pdf"
+    if content.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg"
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png"
+    if len(content) >= 12 and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        return "image/webp"
+    return ""
+
+
 @router.api_route("/api/employees", methods=["GET", "POST"])
 async def employees_api(request: Request):
     session = await require_role(request, ADMIN_ROLES)
@@ -98,6 +111,13 @@ async def employee_documents_api(request: Request):
                 if not document:
                     return json_response({"ok": False, "error": "Documento não encontrado."}, 404)
                 filename = safe_filename(document["filename"])
+                await record_audit(
+                    request,
+                    "employee_document",
+                    "download",
+                    entity_id=document_id,
+                    details={"employeeId": document["employeeId"], "filename": filename},
+                )
                 return Response(
                     content=document["content"],
                     status_code=200,
@@ -106,13 +126,20 @@ async def employee_documents_api(request: Request):
                         "Content-Length": str(len(document["content"])),
                         "Cache-Control": "private, no-store",
                         "X-Content-Type-Options": "nosniff",
-                        "Content-Disposition": f"inline; filename*=UTF-8''{quote(filename)}",
+                        "Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename)}",
+                        "Content-Security-Policy": "sandbox",
                     },
                 )
             documents = await list_employee_documents(
                 employee_id=text(request.query_params.get("employeeId"), 120),
                 period=text(request.query_params.get("period"), 20),
                 kind=text(request.query_params.get("kind"), 40),
+            )
+            await record_audit(
+                request,
+                "employee_document",
+                "list",
+                details={"employeeId": text(request.query_params.get("employeeId"), 120), "count": len(documents)},
             )
             return json_response({"ok": True, "documents": documents})
 
@@ -123,6 +150,13 @@ async def employee_documents_api(request: Request):
             deleted = await delete_employee_document(document_id)
             if not deleted:
                 return json_response({"ok": False, "error": "Documento não encontrado."}, 404)
+            await record_audit(
+                request,
+                "employee_document",
+                "delete",
+                entity_id=document_id,
+                details={"employeeId": deleted.get("employee_id"), "filename": deleted.get("filename")},
+            )
             return json_response({"ok": True, "deleted": deleted})
 
         body = await body_json(request)
@@ -135,7 +169,7 @@ async def employee_documents_api(request: Request):
             return json_response({"ok": False, "error": "Selecione um funcionário."}, 400)
         if not raw_b64:
             return json_response({"ok": False, "error": "Arquivo não enviado."}, 400)
-        if mime_type not in ALLOWED_MIME:
+        if mime_type and mime_type not in ALLOWED_MIME:
             return json_response({"ok": False, "error": "Envie PDF, JPG, PNG ou WEBP."}, 400)
         try:
             content = base64.b64decode(raw_b64, validate=False)
@@ -143,6 +177,12 @@ async def employee_documents_api(request: Request):
             content = b""
         if not content:
             return json_response({"ok": False, "error": "Arquivo inválido."}, 400)
+        actual_mime = detected_mime(content)
+        if actual_mime not in ALLOWED_MIME:
+            return json_response({"ok": False, "error": "O conteúdo real do arquivo não é PDF, JPG, PNG ou WEBP válido."}, 400)
+        if mime_type and mime_type != actual_mime:
+            return json_response({"ok": False, "error": "O tipo declarado não corresponde ao conteúdo real do arquivo."}, 400)
+        mime_type = actual_mime
         if len(content) > MAX_FILE_BYTES:
             return json_response({"ok": False, "error": "O arquivo deve ter no máximo 2,75 MB neste modo de upload."}, 413)
 
@@ -157,6 +197,13 @@ async def employee_documents_api(request: Request):
                 "mimeType": mime_type,
                 "content": content,
             }
+        )
+        await record_audit(
+            request,
+            "employee_document",
+            "upload",
+            entity_id=str(document.get("id") or ""),
+            details={"employeeId": employee_id, "filename": filename, "mimeType": mime_type, "size": len(content)},
         )
         return json_response({"ok": True, "document": document}, 201)
     except PayloadTooLarge:

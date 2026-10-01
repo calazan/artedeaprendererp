@@ -1,11 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import os
 from typing import Any
 
 from psycopg.types.json import Jsonb
 
 from .config import database_url, remote_sync_key
+from .crypto import (
+    decrypt_preregistration_data,
+    encrypt_preregistration_data,
+    preregistration_needs_migration,
+)
 from .db import connection
 from .utils import iso_value
 
@@ -87,7 +93,7 @@ async def create_record(record_id: str, protocol: str, data: dict) -> dict:
                 VALUES (%s,%s,'pending',%s,now(),now())
                 RETURNING id,protocol,status,created_at
                 """,
-                (record_id, protocol, Jsonb(data or {})),
+                (record_id, protocol, Jsonb(encrypt_preregistration_data(data or {}))),
             )
             row = await cur.fetchone()
     return {"id": row[0], "protocol": row[1], "status": row[2], "created_at": iso_value(row[3])}
@@ -120,7 +126,7 @@ async def list_records(status: str = "", limit: Any = 200) -> list[dict]:
             "id": r[0],
             "protocol": r[1],
             "status": r[2],
-            "data": r[3] or {},
+            "data": decrypt_preregistration_data(r[3] or {}),
             "enrolled_student_id": r[4],
             "created_at": iso_value(r[5]),
             "updated_at": iso_value(r[6]),
@@ -160,6 +166,7 @@ async def update_record(record_id: str, status: str, data: dict | None, enrolled
     if status not in {"pending", "reviewing", "enrolled", "rejected"}:
         raise ValueError("Status de pré-cadastro inválido.")
     has_data = isinstance(data, dict)
+    protected_data = encrypt_preregistration_data(data) if has_data else {}
     async with connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
@@ -176,7 +183,7 @@ async def update_record(record_id: str, status: str, data: dict | None, enrolled
                 (
                     status,
                     has_data,
-                    Jsonb(data if has_data else {}),
+                    Jsonb(protected_data),
                     status,
                     str(enrolled_student_id or ""),
                     status,
@@ -190,7 +197,7 @@ async def update_record(record_id: str, status: str, data: dict | None, enrolled
         "id": row[0],
         "protocol": row[1],
         "status": row[2],
-        "data": row[3] or {},
+        "data": decrypt_preregistration_data(row[3] or {}),
         "enrolled_student_id": row[4],
         "created_at": iso_value(row[5]),
         "updated_at": iso_value(row[6]),
@@ -239,3 +246,55 @@ async def consume_rate_limit(
         return bool(row and int(row[0]) <= int(limit))
     except Exception:
         return fail_open
+
+
+def rejected_retention_days() -> int:
+    try:
+        return max(1, min(int(os.getenv("PREREG_REJECTED_RETENTION_DAYS", "30")), 3650))
+    except Exception:
+        return 30
+
+
+async def cleanup_retention() -> dict:
+    await ensure_schema()
+    days = rejected_retention_days()
+    async with connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                await cur.execute(
+                    """
+                    DELETE FROM public.smg_preregistrations
+                    WHERE status='rejected'
+                      AND COALESCE(reviewed_at,updated_at,created_at) < now() - (%s * interval '1 day')
+                    RETURNING id
+                    """,
+                    (days,),
+                )
+                removed = len(await cur.fetchall())
+                await cur.execute(
+                    "DELETE FROM public.smg_rate_limits WHERE reset_at < now() - interval '1 day' RETURNING bucket_key"
+                )
+                rate_removed = len(await cur.fetchall())
+    return {"rejectedRemoved": removed, "rateLimitsRemoved": rate_removed, "retentionDays": days}
+
+
+async def migrate_sensitive_records() -> dict:
+    """Encrypt legacy plaintext sensitive fields in-place without deleting records."""
+    await ensure_schema()
+    migrated = 0
+    async with connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                await cur.execute("SELECT id,data FROM public.smg_preregistrations FOR UPDATE")
+                rows = await cur.fetchall()
+                for record_id, raw in rows:
+                    data = raw or {}
+                    if not preregistration_needs_migration(data):
+                        continue
+                    protected = encrypt_preregistration_data(data)
+                    await cur.execute(
+                        "UPDATE public.smg_preregistrations SET data=%s,updated_at=now() WHERE id=%s",
+                        (Jsonb(protected), record_id),
+                    )
+                    migrated += 1
+    return {"migrated": migrated}
