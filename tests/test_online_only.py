@@ -42,3 +42,11 @@ def test_preregistration_session_storage_is_id_only():
     assert "existingStudentId" not in admin[admin.find("PENDING_ENROLLMENT_KEY"):]
     assert "sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(record.id))" in admin
     assert "sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(preregistrationId))" in recovery
+
+
+def test_teacher_attendance_has_no_persistent_offline_queue():
+    source = (ROOT / "frontend" / "teacher-bundle.min.js").read_text(encoding="utf-8")
+    assert "Modo local de emergência" not in source
+    assert "teacher-offline" not in source
+    assert "writeJSON(TEACHER_PENDING_KEY" not in source
+    assert "Sem fila offline persistente" in source
