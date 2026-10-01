@@ -96,10 +96,8 @@ def rendered_html(path: Path) -> HTMLResponse:
         text = text.replace('data-app-version="4.6.9"', f'data-app-version="{APP_VERSION}"')
         text = text.replace(
             '<link rel="stylesheet" href="menu-brand.css?v=20261001" />',
-            '<link rel="stylesheet" href="menu-brand.css?v=20261001" />
-'
-            '    <link rel="stylesheet" href="main-menu-colors.css?v=20261001" />
-'
+            '<link rel="stylesheet" href="menu-brand.css?v=20261001" />\\n'
+            '    <link rel="stylesheet" href="main-menu-colors.css?v=20261001" />\\n'
             '    <link rel="stylesheet" href="visual-fixes.css?v=20261001" />',
         )
         text = text.replace("logo-horizontal.webp?v=20261001", "logo-horizontal.webp?v=20261001")
