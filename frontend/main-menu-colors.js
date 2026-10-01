@@ -1,9 +1,9 @@
 // Paleta permanente do menu principal: nenhum item fica branco, inclusive em estado inativo.
 (() => {
-  if (document.querySelector("#arteMainMenuColors")) return;
+  if (document.querySelector("#saberMainMenuColors")) return;
 
   const style = document.createElement("style");
-  style.id = "arteMainMenuColors";
+  style.id = "saberMainMenuColors";
   style.textContent = `
     .tabs.menu-final-v414 .tab,
     .tabs.menu-final-v414 .teacher-tab-link {
@@ -89,7 +89,7 @@
 // Fallback para páginas que carreguem este arquivo isoladamente. No app principal,
 // a fila central de módulos carrega payment-deletion-persistence-fix.js no ponto correto.
 (() => {
-  if (window.__arteOrderedModulesManaged) return;
+  if (window.__saberOrderedModulesManaged) return;
   if (document.querySelector('script[data-payment-deletion-persistence-fix]')) return;
   const script = document.createElement("script");
   script.src = "payment-deletion-persistence-fix.js?v=2";

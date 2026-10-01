@@ -1,7 +1,7 @@
 // Personalização robusta das cores do menu principal e dos submenus do Arte de Aprender.
 (() => {
-  if (window.__arteNavigationColorCustomizationV2Loaded) return;
-  window.__arteNavigationColorCustomizationV2Loaded = true;
+  if (window.__saberNavigationColorCustomizationV2Loaded) return;
+  window.__saberNavigationColorCustomizationV2Loaded = true;
 
   const VERSION = 2;
   const STORAGE_KEY = "arteDeAprenderERP.navigationColors.v2";
@@ -368,5 +368,5 @@
   observer.observe(document.body, { childList: true, subtree: true });
 
   document.addEventListener("click", () => setTimeout(applyColors, 0), true);
-  window.__arteNavigationColors = { apply: applyColors, renderEditor, resetAll, setColor };
+  window.__saberNavigationColors = { apply: applyColors, renderEditor, resetAll, setColor };
 })();
