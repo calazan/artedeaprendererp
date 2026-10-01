@@ -1,0 +1,1644 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Gestão Arte de Aprender V4.6.9</title>
+    <link rel="stylesheet" href="styles.min.css?v=469-a3p3" />
+    <link rel="stylesheet" href="menu-brand.css?v=1" />
+    <link rel="icon" type="image/png" href="favicon-96.png?v=1" />
+    <!-- V4.1.4 revisão visual aplicada -->
+    <link rel="manifest" href="manifest.json?v=2" />
+    <meta name="theme-color" content="#9f5aa6" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Arte de Aprender" />
+    <link rel="apple-touch-icon" href="app-icon-192.png?v=1" />
+  </head>
+  <body data-app-version="4.6.9">
+    <section class="login-screen is-hidden" id="loginScreen" aria-label="Tela de acesso">
+      <div class="orb orb-purple"></div>
+      <div class="orb orb-yellow"></div>
+      <div class="login-card glass-card">
+        <img class="login-logo" src="2.webp?v=1" decoding="async" alt="Arte de Aprender" />
+        <p class="eyebrow">Sistema interno</p>
+        <h1>Gestão Arte de Aprender</h1>
+        <form id="loginForm" class="login-form">
+          <label for="loginPassword">Senha de acesso</label>
+          <input
+            id="loginPassword"
+            type="password"
+            autocomplete="current-password"
+            required
+            placeholder="Digite a senha"
+          />
+          <button type="submit">Entrar no sistema</button>
+        </form>
+        <a class="teacher-access-link" href="chamada-professores.html">Chamada dos professores</a>
+      </div>
+    </section>
+
+    <div class="app-shell" id="appShell">
+      <aside class="sidebar glass-card">
+        <div class="brand">
+          <img class="brand-logo brand-logo-icon brand-menu-image" src="menu-brand.png?v=1" decoding="async" alt="Arte de Aprender" />
+          <div>
+            <strong>Gestão Arte de Aprender</strong>
+            <span>Contraturno infantil</span>
+          </div>
+        </div>
+
+        <nav class="tabs menu-final-v414" aria-label="Áreas do sistema">
+          <button type="button" class="tab is-active" data-view="dashboard">Painel</button>
+          <button type="button" class="tab" data-view="finance">Financeiro</button>
+          <button type="button" class="tab" data-view="students">Crianças</button>
+          <button type="button" class="tab" data-view="attendance">Chamada</button>
+          <button type="button" class="tab" data-view="extraEvents">Eventos extras</button>
+          <button type="button" class="tab" data-view="agenda">Agenda</button>
+          <button type="button" class="tab" data-view="reports">Relatórios</button>
+          <button type="button" class="tab" data-view="proposals">Propostas</button>
+          <button type="button" class="tab" data-view="settings">Configurações</button>
+          <a class="tab teacher-tab-link" href="chamada-professores.html">Chamada professores</a>
+        </nav>
+      </aside>
+
+      <main class="main">
+        <header class="topbar glass-card">
+          <div class="topbar-title-block">
+            <h1 id="viewTitle">Painel</h1>
+          </div>
+
+          <div class="topbar-period glass-card">
+            <span>Período atual</span>
+            <div class="period-picker period-picker-top">
+              <select id="globalMonth"></select>
+              <input id="globalYear" type="number" min="2024" max="2100" />
+            </div>
+          </div>
+
+          <div class="actions">
+            <button class="danger" id="logoutButton">Bloquear</button>
+            <input type="file" id="importFile" accept="application/json,.json" hidden />
+          </div>
+        </header>
+
+        <section class="view is-active" id="dashboardView">
+          <div class="metric-grid">
+            <article class="metric glass-card">
+              <span>Crianças ativas</span>
+              <strong id="metricActiveStudents">0</strong>
+              <small id="metricTotalStudents">0 cadastradas</small>
+            </article>
+            <article class="metric glass-card">
+              <span>Previsto no mês</span>
+              <strong id="metricExpected">R$ 0,00</strong>
+              <small>Mensalidades do período</small>
+            </article>
+            <article class="metric glass-card good">
+              <span>Recebido líquido</span>
+              <strong id="metricReceived">R$ 0,00</strong>
+              <small>Após taxas</small>
+            </article>
+            <article class="metric glass-card warn">
+              <span>A receber</span>
+              <strong id="metricPending">R$ 0,00</strong>
+              <small id="metricOpenPayments">0 pendências</small>
+            </article>
+            <article class="metric glass-card bad">
+              <span>Despesas</span>
+              <strong id="metricExpenses">R$ 0,00</strong>
+              <small>No mês selecionado</small>
+            </article>
+            <article class="metric glass-card total">
+              <span>Resultado mensal</span>
+              <strong id="metricResult">R$ 0,00</strong>
+              <small>Recebido líquido - despesas</small>
+            </article>
+          </div>
+
+          <div class="dashboard-grid">
+            <section class="panel glass-card">
+              <div class="panel-head">
+                <h2>Chamada de hoje</h2>
+                <span id="todayLabel"></span>
+              </div>
+              <div class="attendance-summary">
+                <div><strong id="todayPresent">0</strong><span>Presentes</span></div>
+                <div><strong id="todayAbsent">0</strong><span>Faltas</span></div>
+                <div><strong id="todayExcused">0</strong><span>Justificadas</span></div>
+                <div><strong id="todayUnset">0</strong><span>Sem marcar</span></div>
+              </div>
+            </section>
+
+            <section class="panel glass-card">
+              <div class="panel-head">
+                <h2>Caixa e bancos</h2>
+                <span id="periodLabelDashboard"></span>
+              </div>
+              <div class="cash-lines">
+                <div><span>Resultado do mês</span><strong id="metricCash">R$ 0,00</strong></div>
+                <div><span>Saldo nos bancos</span><strong id="metricBankBalance">R$ 0,00</strong></div>
+                <div><span>Total disponível</span><strong id="metricTotalAvailable">R$ 0,00</strong></div>
+              </div>
+            </section>
+          </div>
+
+          <section class="panel glass-card">
+            <div class="panel-head">
+              <h2>Alertas rápidos</h2>
+              <span>O que precisa de atenção</span>
+            </div>
+            <div class="alerts" id="alertsList"></div>
+          </section>
+        </section>
+
+        <section class="view" id="studentsView">
+          <section class="panel glass-card">
+            <div class="panel-head">
+              <h2>Cadastro de criança</h2>
+              <span>Dados pedagógicos, financeiros e de contato</span>
+            </div>
+            <form class="student-form" id="studentForm">
+              <input type="hidden" id="studentId" />
+              <label>
+                Nome da criança
+                <input id="studentName" required />
+              </label>
+              <label>
+                Data de nascimento
+                <input id="birthDate" type="date" />
+              </label>
+              <label>
+                Responsável
+                <input id="guardianName" required />
+              </label>
+              <label>
+                CPF do responsável
+                <input id="guardianCpf" placeholder="000.000.000-00" />
+              </label>
+              <label>
+                Telefone
+                <input id="guardianPhone" placeholder="(44) 99999-9999" />
+              </label>
+              <label>
+                Telefone de emergência
+                <input id="emergencyPhone" placeholder="(44) 99999-9999" />
+              </label>
+              <label class="wide-field">
+                Endereço
+                <input id="guardianAddress" placeholder="Rua, número, bairro..." />
+              </label>
+              <input type="hidden" id="activities" />
+              <div class="wide-field activity-picker-card">
+                <div class="activity-picker-head">
+                  <div>
+                    <strong>Atividades da criança</strong>
+                    <span>Escolha as atividades e ajuste o valor individual de cada uma.</span>
+                  </div>
+                  <em id="studentActivityTotalLabel">Total: R$ 0,00</em>
+                </div>
+                <div class="activity-choice-grid" id="studentActivityPicker"></div>
+                <div class="student-selected-activities" id="studentSelectedActivities"></div>
+                <small>Cadastre novas atividades em Configurações. O valor mensal será calculado pela soma das atividades escolhidas.</small>
+              </div>
+              <label>
+                Horas contratadas no mês
+                <input id="contractedHours" type="number" min="0" step="0.5" />
+              </label>
+              <label>
+                Valor mensal total
+                <input id="monthlyValue" type="number" min="0" step="0.01" required />
+              </label>
+              <label>
+                Dia do vencimento
+                <input id="dueDay" type="number" min="1" max="31" placeholder="10" />
+              </label>
+              <label>
+                Status
+                <select id="studentStatus">
+                  <option value="active">Ativo</option>
+                  <option value="paused">Pausado</option>
+                  <option value="archived">Arquivada</option>
+                </select>
+              </label>
+              <label class="wide-field">
+                Observações
+                <input id="studentNotes" placeholder="Alergias, rotina, combinados, observações pedagógicas..." />
+              </label>
+              <div class="form-actions wide-field">
+                <button type="submit">Salvar criança</button>
+                <button type="button" class="secondary" id="clearStudentForm">Limpar formulário</button>
+              </div>
+            </form>
+          </section>
+
+          
+
+
+          <section class="panel glass-card">
+            <div class="panel-head stackable">
+              <div>
+                <h2>Crianças cadastradas</h2>
+                <span>Filtre por atividade ou busque pelo nome da criança.</span>
+              </div>
+              <input class="search" id="studentSearch" placeholder="Buscar por nome, responsável ou atividade" />
+            </div>
+
+            <div class="student-activity-filter-panel">
+              <div class="student-activity-filter-head">
+                <strong>Filtrar por atividade</strong>
+                <span id="studentActivityFilterInfo">Mostrando todas as crianças cadastradas.</span>
+              </div>
+              <div class="student-activity-filter-tabs" id="studentActivityFilterTabs"></div>
+            </div>
+
+            <div class="table-wrap">
+              <table class="students-table">
+                <thead>
+                  <tr>
+                    <th>Criança</th>
+                    <th>Responsável</th>
+                    <th>Contatos</th>
+                    <th>Plano</th>
+                    <th>Venc.</th>
+                    <th>Status</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="studentsTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="attendanceView">
+          <section class="panel glass-card">
+            <div class="panel-head stackable">
+              <div>
+                <h2>Chamada diária</h2>
+                <span>Faça a chamada geral ou filtre por atividade cadastrada.</span>
+              </div>
+              <div class="inline-actions">
+                <button class="secondary" id="markAllPresent">Marcar visíveis presentes</button>
+              </div>
+            </div>
+
+            <div class="attendance-date-panel">
+              <div>
+                <strong>Data da chamada</strong>
+                <span>Escolha o dia antes de marcar presença, falta ou justificativa.</span>
+              </div>
+              <label class="attendance-date-field">
+                Selecionar data
+                <input type="date" id="attendanceDate" />
+              </label>
+            </div>
+
+            <div class="attendance-activity-panel">
+              <div class="attendance-activity-head">
+                <div>
+                  <strong>Chamada por atividade</strong>
+                  <span>Escolha uma subaba para fazer chamada somente das crianças daquela atividade.</span>
+                </div>
+              </div>
+              <div class="attendance-subtabs" id="attendanceActivityTabs"></div>
+              <div class="attendance-filter-info" id="attendanceActivityInfo"></div>
+            </div>
+
+            <div class="attendance-print-panel">
+              <div class="attendance-print-head">
+                <div>
+                  <strong>Chamada impressa mensal</strong>
+                  <span>Gere uma tabela do mês escolhido para as professoras preencherem manualmente com P e F.</span>
+                </div>
+              </div>
+              <div class="attendance-print-tools">
+                <label>
+                  Mês da chamada impressa
+                  <input type="month" id="printedAttendanceMonth" />
+                </label>
+                <div class="inline-actions">
+                  <button type="button" class="secondary" id="generatePrintedAttendance">Gerar tabela</button>
+                  <button type="button" class="secondary" id="printPrintedAttendance">Imprimir tabela</button>
+                  <button type="button" class="secondary" id="hidePrintedAttendance">Ocultar tabela</button>
+                </div>
+              </div>
+              <div class="attendance-print-container" id="printedAttendanceContainer"></div>
+            </div>
+
+            <div class="attendance-list" id="attendanceList"></div>
+          </section>
+        </section>
+
+
+        <section class="view" id="extraEventsView">
+          <div class="metric-grid compact-metrics">
+            <article class="metric glass-card event-metric">
+              <span>Previsto em eventos</span>
+              <strong id="extraEventsExpected">R$ 0,00</strong>
+              <small>Eventos do período</small>
+            </article>
+            <article class="metric glass-card good event-metric">
+              <span>Recebido em eventos</span>
+              <strong id="extraEventsReceived">R$ 0,00</strong>
+              <small>Lançado nas contas bancárias</small>
+            </article>
+            <article class="metric glass-card warn event-metric">
+              <span>Pendente em eventos</span>
+              <strong id="extraEventsPending">R$ 0,00</strong>
+              <small>Aguardando recebimento</small>
+            </article>
+            <article class="metric glass-card total event-metric">
+              <span>Eventos cadastrados</span>
+              <strong id="extraEventsCount">0</strong>
+              <small>No mês selecionado</small>
+            </article>
+          </div>
+
+          <div class="extra-subtabs" aria-label="Subáreas de eventos extras">
+            <button class="extra-subtab is-active" type="button" data-extra-pane="events">Eventos cadastrados</button>
+            <button class="extra-subtab" type="button" data-extra-pane="participants">Participantes</button>
+          </div>
+
+          <div class="extra-pane is-active" data-extra-pane-content="events">
+            <section class="panel glass-card">
+              <div class="panel-head">
+                <div>
+                  <h2>Novo evento extra</h2>
+                <span>Cadastre colônia de férias, viagem, oficina ou evento de um dia</span>
+              </div>
+            </div>
+            <form class="event-form event-form-wide" id="extraEventForm">
+              <input type="hidden" id="extraEventId" />
+              <label>
+                Nome do evento
+                <input id="extraEventName" placeholder="Ex.: Colônia de férias de julho" required />
+              </label>
+              <label>
+                Tipo
+                <select id="extraEventType"></select>
+              </label>
+              <label>
+                Data inicial
+                <input id="extraEventStartDate" type="date" required />
+              </label>
+              <label>
+                Data final
+                <input id="extraEventEndDate" type="date" required />
+              </label>
+              <label>
+                Valor
+                <input id="extraEventAmount" type="number" min="0" step="0.01" required />
+              </label>
+              <label>
+                Conta bancária de entrada
+                <select id="extraEventBankAccount"></select>
+              </label>
+              <label>
+                Status
+                <select id="extraEventStatus"></select>
+              </label>
+              <label>
+                Participantes
+                <input id="extraEventParticipants" type="number" min="0" step="1" />
+              </label>
+              <label class="security-toggle-row span-2 event-attendance-toggle" for="extraEventIncludeAttendance">
+                <span>
+                  <strong>Incluir participantes na chamada</strong>
+                  <small>As crianças deste evento aparecerão somente entre a data inicial e a data final.</small>
+                </span>
+                <input id="extraEventIncludeAttendance" type="checkbox" />
+              </label>
+              <label class="span-2">
+                Observações
+                <input id="extraEventNotes" placeholder="Ex.: pacote com lanche, passeio, transporte..." />
+              </label>
+              <div class="form-actions event-actions">
+                <button type="submit">Salvar evento</button>
+                <button type="button" class="secondary" id="clearExtraEventForm">Limpar</button>
+              </div>
+            </form>
+          </section>
+
+          <section class="panel glass-card finance-section-gap">
+            <div class="panel-head">
+              <div>
+                <h2>Eventos extras cadastrados</h2>
+                <span>Controle separado das mensalidades e com entrada na conta bancária escolhida</span>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Evento</th>
+                    <th>Período</th>
+                    <th>Valor</th>
+                    <th>Status</th>
+                    <th>Conta bancária</th>
+                    <th>Observações</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="extraEventsTable"></tbody>
+              </table>
+            </div>
+          </section>
+          </div>
+
+          <div class="extra-pane" data-extra-pane-content="participants">
+            <section class="panel glass-card">
+              <div class="panel-head">
+                <div>
+                  <h2>Participantes do evento</h2>
+                  <span>Cadastro rápido com RG, CPF, telefone e endereço</span>
+                </div>
+                <div class="participant-header-actions">
+                  <label class="inline-field compact-select">
+                    Evento
+                    <select id="participantEventSelect"></select>
+                  </label>
+                  <div class="report-actions">
+                    <button type="button" class="secondary event-report-pdf" id="exportExtraEventPdf">Relatório PDF</button>
+                    <button type="button" class="secondary event-report-excel" id="exportExtraEventExcel">Excel</button>
+                  </div>
+                </div>
+              </div>
+
+              <form class="participant-form" id="extraParticipantForm">
+                <input type="hidden" id="extraParticipantId" />
+                <label>
+                  Evento
+                  <select id="participantEventId"></select>
+                </label>
+                <label>
+                  Nome do participante
+                  <input id="participantName" placeholder="Nome completo" required />
+                </label>
+                <label>
+                  Vincular à criança cadastrada
+                  <select id="participantLinkedStudent">
+                    <option value="">Participante somente do evento</option>
+                  </select>
+                </label>
+                <label>
+                  RG
+                  <input id="participantRg" placeholder="00.000.000-0" />
+                </label>
+                <label>
+                  CPF
+                  <input id="participantCpf" placeholder="000.000.000-00" />
+                </label>
+                <label>
+                  Telefone
+                  <input id="participantPhone" placeholder="(44) 99999-9999" />
+                </label>
+                <label class="span-2">
+                  Endereço
+                  <input id="participantAddress" placeholder="Rua, número, bairro, cidade" />
+                </label>
+                <label>
+                  Valor
+                  <input id="participantAmount" type="number" min="0" step="0.01" placeholder="0,00" />
+                </label>
+                <label>
+                  Forma de pagamento
+                  <select id="participantPaymentMethod">
+                    <option value="">Escolher</option>
+                    <option value="pix">PIX</option>
+                    <option value="debito">Débito</option>
+                    <option value="credito">Crédito</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="transferencia">Transferência</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="outro">Outro</option>
+                  </select>
+                </label>
+                <label>
+                  Status do pagamento
+                  <select id="participantPaymentStatus" disabled>
+                    <option value="pending">Pendente</option>
+                    <option value="partial">Parcial</option>
+                    <option value="paid">Pago</option>
+                  </select>
+                  <small>O status é calculado pelos recebimentos registrados.</small>
+                </label>
+                <label class="span-2">
+                  Observação
+                  <input id="participantNotes" placeholder="Autorização, restrição, responsável..." />
+                </label>
+                <div class="form-actions participant-actions">
+                  <button type="submit">Salvar participante</button>
+                  <button type="button" class="secondary" id="clearExtraParticipantForm">Limpar</button>
+                </div>
+              </form>
+            </section>
+
+            
+
+
+            <section class="panel glass-card finance-section-gap">
+              <div class="panel-head">
+                <div>
+                  <h2 id="participantEventTitle">Participantes</h2>
+                  <span><strong id="participantCount">0</strong> participante(s) cadastrados neste evento</span>
+                </div>
+              </div>
+              <div class="participant-finance-summary">
+                <div><span>Previsto</span><strong id="participantExpectedTotal">R$ 0,00</strong></div>
+                <div><span>Recebido</span><strong id="participantReceivedTotal">R$ 0,00</strong></div>
+                <div><span>Pendente</span><strong id="participantPendingTotal">R$ 0,00</strong></div>
+              </div>
+              <div class="table-wrap">
+                <table class="participants-table">
+                  <thead>
+                    <tr>
+                      <th>Nome</th>
+                      <th>RG</th>
+                      <th>CPF</th>
+                      <th>Telefone</th>
+                      <th>Endereço</th>
+                      <th>Valor / saldo</th>
+                      <th>Forma</th>
+                      <th>Status</th>
+                      <th>Conta</th>
+                      <th>Receber agora</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="participantsTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+
+        <section class="view" id="agendaView">
+          <section class="panel glass-card agenda-panel">
+            <div class="panel-head stackable">
+              <div>
+                <h2>Agenda do mês</h2>
+                <span id="agendaPeriodLabel"></span>
+              </div>
+              <button class="secondary" id="addAgendaEventToday">Adicionar evento hoje</button>
+            </div>
+            <div class="agenda-layout">
+              <div>
+                <div class="agenda-weekdays">
+                  <span>Dom</span><span>Seg</span><span>Ter</span><span>Qua</span><span>Qui</span><span>Sex</span><span>Sáb</span>
+                </div>
+                <div class="agenda-grid" id="agendaGrid"></div>
+              </div>
+              <aside class="agenda-side glass-card">
+                <h3>Aniversariantes do mês</h3>
+                <div id="birthdayList" class="birthday-list"></div>
+                <h3>Eventos agendados</h3>
+                <div id="agendaEventList" class="agenda-event-list"></div>
+              </aside>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="financeView">
+          <div class="finance-subtabs" aria-label="Subáreas do financeiro">
+            <button class="finance-subtab is-active" type="button" data-finance-pane="receipts">Recebimentos do mês</button>
+            <button class="finance-subtab" type="button" data-finance-pane="expenses">Despesas</button>
+            <button class="finance-subtab" type="button" data-finance-pane="accounts">Saldo em contas</button>
+          </div>
+
+          <div class="finance-pane is-active" id="financeReceiptsPane" data-finance-pane-content="receipts">
+            <section class="panel glass-card">
+              <div class="panel-head stackable">
+                <div>
+                  <h2>Recebimentos do mês</h2>
+                  <span>Gere, confirme recebimentos e emita recibos</span>
+                </div>
+                <button id="generatePayments" class="secondary">Gerar mensalidades</button>
+              </div>
+              <div class="table-wrap">
+                <table class="payments-table">
+                  <thead>
+                    <tr>
+                      <th>Criança</th>
+                      <th>Mensalidade / saldo</th>
+                      <th>Horas</th>
+                      <th>Status</th>
+                      <th>Forma</th>
+                      <th>Taxa aplicada</th>
+                      <th>Creditado</th>
+                      <th>Conta</th>
+                      <th>Data</th>
+                      <th>Receber agora</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="paymentsTable"></tbody>
+                </table>
+              </div>
+            </section>
+            <section class="panel glass-card finance-section-gap other-income-panel">
+              <div class="panel-head stackable">
+                <div>
+                  <h2>Outras entradas do mês</h2>
+                  <span>Sublocação de salas, venda de produtos e outras receitas</span>
+                </div>
+              </div>
+
+              <form class="other-income-form" id="otherIncomeForm">
+                <input type="hidden" id="otherIncomeId" />
+                <label>
+                  Descrição
+                  <input id="otherIncomeDescription" placeholder="Ex.: Sublocação de sala, venda de produto..." required />
+                </label>
+                <label>
+                  Tipo / categoria
+                  <input id="otherIncomeCategory" placeholder="Ex.: Sublocação, Produtos, Evento..." />
+                </label>
+                <label>
+                  Valor
+                  <input id="otherIncomeAmount" type="number" min="0" step="0.01" required />
+                </label>
+                <label>
+                  Data
+                  <input id="otherIncomeDate" type="date" required />
+                </label>
+                <label>
+                  Conta de entrada
+                  <select id="otherIncomeAccount"></select>
+                </label>
+                <button type="submit">Salvar entrada</button>
+              </form>
+
+              <div class="cash-lines other-income-summary">
+                <div><span>Total de outras entradas</span><strong id="financeOtherIncomeTotal">R$ 0,00</strong></div>
+                <div><span>Quantidade de entradas</span><strong id="financeOtherIncomeCount">0</strong></div>
+              </div>
+
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Data</th>
+                      <th>Descrição</th>
+                      <th>Tipo</th>
+                      <th>Conta</th>
+                      <th>Valor</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="otherIncomeTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-pane" id="financeExpensesPane" data-finance-pane-content="expenses">
+            <div class="finance-grid">
+              <section class="panel glass-card">
+                <div class="panel-head">
+                  <h2>Nova conta / despesa</h2>
+                  <span>Cadastre a conta, vencimento e acompanhe o pagamento</span>
+                </div>
+                <form class="expense-form expense-form-wide" id="expenseForm">
+                  <label>
+                    Descrição
+                    <input id="expenseDescription" required />
+                  </label>
+                  <label>
+                    Categoria
+                    <select id="expenseCategory">
+                      <option value="">Selecione uma categoria</option>
+                    </select>
+                  </label>
+                  <label>
+                    Valor
+                    <input id="expenseAmount" type="number" min="0" step="0.01" required />
+                  </label>
+                  <label>
+                    Data do lançamento
+                    <input id="expenseDate" type="date" required />
+                  </label>
+                  <label>
+                    Vencimento
+                    <input id="expenseDueDate" type="date" required />
+                  </label>
+                  <button type="submit">Salvar conta</button>
+                </form>
+              </section>
+
+              <section class="panel glass-card">
+                <div class="panel-head">
+                  <h2>Resumo de despesas</h2>
+                  <span>Período selecionado</span>
+                </div>
+                <div class="cash-lines">
+                  <div><span>Total de despesas</span><strong id="financeExpenseTotal">R$ 0,00</strong></div>
+                  <div><span>Quantidade de lançamentos</span><strong id="financeExpenseCount">0</strong></div>
+                  <div><span>Contas pendentes</span><strong id="financeExpenseOpenCount">0</strong></div>
+                  <div><span>A vencer em 30 dias</span><strong id="financeExpenseUpcomingCount">0</strong></div>
+                </div>
+              </section>
+            </div>
+
+            <section class="panel glass-card finance-section-gap" id="upcomingExpensesPanel">
+              <div class="panel-head">
+                <h2>Contas a vencer nos próximos 30 dias</h2>
+                <span>Planejamento rápido do caixa</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Vencimento</th>
+                      <th>Descrição</th>
+                      <th>Categoria</th>
+                      <th>Valor</th>
+                      <th>Status</th>
+                      <th>Dias</th>
+                      <th>Conta bancária</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="upcomingExpensesTable"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel glass-card finance-section-gap">
+              <div class="panel-head">
+                <h2>Despesas cadastradas</h2>
+                <span>Lista filtrada pelo mês escolhido</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Lançamento</th>
+                      <th>Vencimento</th>
+                      <th>Descrição</th>
+                      <th>Categoria</th>
+                      <th>Valor</th>
+                      <th>Status</th>
+                      <th>Conta bancária</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="expensesTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="finance-pane" id="financeAccountsPane" data-finance-pane-content="accounts">
+            <div class="finance-grid">
+              <section class="panel glass-card">
+                <div class="panel-head">
+                  <h2>Movimentar saldo da conta</h2>
+                  <span>Escolha uma conta cadastrada em Configurações para acrescentar ou retirar valores</span>
+                </div>
+                <form class="bank-form bank-operation-form" id="bankOperationForm">
+                  <label>
+                    Conta bancária
+                    <select id="bankOperationAccount"></select>
+                  </label>
+                  <label>
+                    Operação
+                    <select id="bankOperationType">
+                      <option value="add">Acrescentar valor</option>
+                      <option value="remove">Retirar valor</option>
+                    </select>
+                  </label>
+                  <label>
+                    Valor
+                    <input id="bankOperationAmount" type="number" min="0" step="0.01" required />
+                  </label>
+                  <label>
+                    Data
+                    <input id="bankOperationDate" type="date" required />
+                  </label>
+                  <label class="bank-operation-note">
+                    Observação
+                    <input id="bankOperationNote" placeholder="Ex.: ajuste de saldo, transferência, saque..." />
+                  </label>
+                  <button type="submit">Salvar movimentação</button>
+                </form>
+                <div class="cash-lines bank-operation-summary">
+                  <div><span>Conta selecionada</span><strong id="selectedBankAccountName">-</strong></div>
+                  <div><span>Saldo atual</span><strong id="selectedBankAccountBalance">R$ 0,00</strong></div>
+                </div>
+              </section>
+
+              <section class="panel glass-card">
+                <div class="panel-head">
+                  <h2>Resumo bancário</h2>
+                  <span>Contas cadastradas</span>
+                </div>
+                <div class="cash-lines">
+                  <div><span>Saldo total nos bancos</span><strong id="financeBankTotal">R$ 0,00</strong></div>
+                  <div><span>Contas cadastradas</span><strong id="financeBankCount">0</strong></div>
+                </div>
+                <div class="form-actions compact-actions">
+                  <label class="inline-field">
+                    Relatório por conta
+                    <select id="financeBankReportAccount"></select>
+                  </label>
+                  <button type="button" class="secondary" id="openBankReportFromFinance">Criar relatório</button>
+                </div>
+              </section>
+            </div>
+
+            <section class="panel glass-card finance-section-gap statement-import-panel">
+              <div class="panel-head">
+                <div>
+                  <h2>Leitura automática de extrato</h2>
+                  <span>Importe CSV, TXT ou OFX para atualizar o saldo da conta</span>
+                </div>
+              </div>
+              <form class="bank-form statement-form" id="statementImportForm">
+                <label>
+                  Conta que será atualizada
+                  <select id="statementAccountSelect"></select>
+                </label>
+                <label>
+                  Arquivo do extrato
+                  <input id="statementFile" type="file" accept=".csv,.txt,.ofx,text/csv,text/plain" />
+                </label>
+                <button type="submit">Ler extrato e atualizar saldo</button>
+              </form>
+              <p class="statement-help">
+                O sistema procura automaticamente uma coluna de <strong>Saldo</strong> no extrato. Se não encontrar, soma os movimentos de entrada e saída ao saldo atual da conta. Para melhores resultados, baixe o extrato do banco em CSV ou OFX.
+              </p>
+            </section>
+
+            <section class="panel glass-card finance-section-gap">
+              <div class="panel-head">
+                <h2>Contas bancárias</h2>
+                <span>Lista de saldos salvos</span>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Conta</th>
+                      <th>Agência / Conta</th>
+                      <th>PIX</th>
+                      <th>Saldo</th>
+                      <th>Observação</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bankAccountsTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+        </section>
+
+        <section class="view" id="reportsView">
+          <div class="report-brand-preview glass-card" id="reportBrandPreview"></div>
+
+          <div class="report-subtabs" aria-label="Subáreas de relatórios">
+            <button class="report-subtab is-active" type="button" data-report-pane="monthly">Relatório mensal</button>
+            <button class="report-subtab" type="button" data-report-pane="individual">Relatório individual</button>
+            <button class="report-subtab" type="button" data-report-pane="expenses">Relatório despesas</button>
+            <button class="report-subtab" type="button" data-report-pane="bank">Relatório saldo em contas</button>
+          </div>
+
+          <div class="report-pane is-active" data-report-pane-content="monthly">
+            <section class="panel glass-card report-panel">
+            <div class="panel-head stackable">
+              <div>
+                <h2>Relatório mensal</h2>
+                <span id="reportPeriodLabel"></span>
+              </div>
+              <div class="report-export-box">
+                <label class="inline-field report-type-field">
+                  Tipo de relatório
+                  <select id="reportType">
+                    <option value="complete">Completo mensal</option>
+                    <option value="frequency">Apenas frequência</option>
+                    <option value="cashflow">Apenas fluxo de caixa</option>
+                    <option value="activities">Por atividades</option>
+                  </select>
+                </label>
+                <label class="inline-field activity-report-field is-hidden" id="activityReportField">
+                  Atividade
+                  <select id="activityReportSelect">
+                    <option value="">Todas as atividades</option>
+                  </select>
+                </label>
+                <label class="inline-field report-format-field">
+                  Formato de exportação
+                  <select id="reportExportFormat">
+                    <option value="pdf">PDF</option>
+                    <option value="excel">Excel</option>
+                  </select>
+                </label>
+                <button class="secondary" id="exportReport">Exportar relatório</button>
+              </div>
+            </div>
+            <div class="report-summary" id="reportSummary"></div>
+          </section>
+            <div class="finance-grid">
+            <section class="panel glass-card">
+              <div class="panel-head">
+                <h2 id="reportPrimaryTitle">Pagamentos por criança</h2>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead id="reportPrimaryHead">
+                    <tr>
+                      <th>Criança</th>
+                      <th>Responsável</th>
+                      <th>Status</th>
+                      <th>Horas utilizadas</th>
+                      <th>Valor</th>
+                      <th>Creditado</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reportPaymentsTable"></tbody>
+                </table>
+              </div>
+            </section>
+
+            <section class="panel glass-card">
+              <div class="panel-head">
+                <h2 id="reportSecondaryTitle">Despesas por categoria</h2>
+              </div>
+              <div class="table-wrap">
+                <table>
+                  <thead id="reportSecondaryHead">
+                    <tr>
+                      <th>Categoria</th>
+                      <th>Total</th>
+                    </tr>
+                  </thead>
+                  <tbody id="reportExpensesTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+          </div>
+
+
+          <div class="report-pane" data-report-pane-content="expenses">
+            <section class="panel glass-card report-panel">
+              <div class="panel-head stackable">
+                <div>
+                  <h2>Relatório despesas</h2>
+                  <span id="expenseReportPeriodLabel"></span>
+                </div>
+                <div class="report-export-box">
+                  <label class="inline-field report-category-field">
+                    Categoria
+                    <select id="expenseReportCategory">
+                      <option value="">Todas as categorias</option>
+                    </select>
+                  </label>
+                  <label class="inline-field report-format-field">
+                    Formato
+                    <select id="expenseReportExportFormat">
+                      <option value="pdf">PDF</option>
+                      <option value="excel">Excel</option>
+                    </select>
+                  </label>
+                  <button class="secondary" id="exportExpenseReport">Exportar relatório de despesas</button>
+                </div>
+              </div>
+              <div class="report-summary" id="expenseReportSummary"></div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Lançamento</th>
+                      <th>Vencimento</th>
+                      <th>Descrição</th>
+                      <th>Categoria</th>
+                      <th>Status</th>
+                      <th>Conta</th>
+                      <th>Valor</th>
+                    </tr>
+                  </thead>
+                  <tbody id="expenseReportTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="report-pane" data-report-pane-content="bank">
+            <section class="panel glass-card report-panel">
+              <div class="panel-head stackable">
+                <div>
+                  <h2>Relatório saldo em contas</h2>
+                  <span id="bankReportPeriodLabel"></span>
+                </div>
+                <div class="report-export-box">
+                  <label class="inline-field report-bank-field">
+                    Conta
+                    <select id="bankReportAccount">
+                      <option value="">Todas as contas</option>
+                    </select>
+                  </label>
+                  <label class="inline-field report-format-field">
+                    Formato
+                    <select id="bankReportExportFormat">
+                      <option value="pdf">PDF</option>
+                      <option value="excel">Excel</option>
+                    </select>
+                  </label>
+                  <button class="secondary" id="exportBankReport">Exportar relatório de saldos</button>
+                </div>
+              </div>
+              <div class="report-summary" id="bankReportSummary"></div>
+              <div class="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Conta</th>
+                      <th>Agência / Conta</th>
+                      <th>Chave PIX</th>
+                      <th>Saldo</th>
+                      <th>Observação</th>
+                    </tr>
+                  </thead>
+                  <tbody id="bankReportTable"></tbody>
+                </table>
+              </div>
+            </section>
+          </div>
+
+          <div class="report-pane" data-report-pane-content="individual">
+            <section class="panel glass-card child-report-panel">
+            <div class="panel-head stackable">
+              <div>
+                <h2>Relatório individual por criança</h2>
+                <span>Controle mensal de horas utilizadas, chamadas, faltas e saldo de horas</span>
+              </div>
+              <div class="report-export-box">
+                <label class="inline-field report-child-field">
+                  Criança
+                  <select id="individualStudentSelect"></select>
+                </label>
+                <label class="inline-field report-format-field">
+                  Formato
+                  <select id="childReportExportFormat">
+                    <option value="pdf">PDF</option>
+                    <option value="excel">Excel</option>
+                  </select>
+                </label>
+                <button class="secondary" id="exportChildReport">Exportar relatório da criança</button>
+
+              </div>
+            </div>
+            <div class="report-summary child-report-summary" id="childReportSummary"></div>
+            <div class="table-wrap child-report-table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Data</th>
+                    <th>Status</th>
+                    <th>Entrada</th>
+                    <th>Saída</th>
+                    <th>Horas usadas</th>
+                    <th>Observação</th>
+                  </tr>
+                </thead>
+                <tbody id="childReportTable"></tbody>
+              </table>
+            </div>
+          </section>
+          </div>
+        </section>
+
+
+        <section class="view" id="proposalsView">
+          <section class="panel glass-card">
+            <div class="panel-head">
+              <div>
+                <h2>Propostas para novos alunos</h2>
+                <span>Calcule mensalidades por horas, valor da hora e desconto ofertado.</span>
+              </div>
+              <button type="button" class="secondary" id="clearProposalForm">Nova proposta</button>
+            </div>
+
+            <div class="proposal-layout">
+              <form id="proposalForm" class="proposal-form glass-card">
+                <input type="hidden" id="proposalId" />
+
+                <label>
+                  Nome da criança
+                  <input id="proposalChildName" placeholder="Ex.: Ana Clara" required />
+                </label>
+
+                <label>
+                  Responsável
+                  <input id="proposalGuardian" placeholder="Nome do responsável" />
+                </label>
+
+                <label>
+                  Horas mensais
+                  <input id="proposalHours" type="number" min="0" step="0.5" placeholder="Ex.: 60" required />
+                </label>
+
+                <label>
+                  Valor da hora
+                  <input id="proposalHourValue" type="number" min="0" step="0.01" placeholder="Ex.: 12,00" required />
+                </label>
+
+                <label>
+                  Tipo de desconto
+                  <select id="proposalDiscountType">
+                    <option value="percent">Desconto em %</option>
+                    <option value="value">Desconto em R$</option>
+                  </select>
+                </label>
+
+                <label>
+                  Desconto ofertado
+                  <input id="proposalDiscountValue" type="number" min="0" step="0.01" placeholder="Ex.: 10" />
+                </label>
+
+                <label class="span-2">
+                  Atividades incluídas
+                  <input id="proposalActivities" placeholder="Ex.: Reforço, balé, karatê, inglês..." />
+                </label>
+
+                <label class="span-2">
+                  Observações / condições
+                  <input id="proposalNotes" placeholder="Ex.: Proposta válida por 7 dias, desconto para pagamento até..." />
+                </label>
+
+                <div class="form-actions span-2">
+                  <button type="submit">Salvar proposta</button>
+                  <button type="button" class="secondary" id="copyProposalMessage">Copiar WhatsApp</button>
+                  <button type="button" class="secondary" id="printCurrentProposal">Imprimir proposta</button>
+                  <button type="button" class="secondary" id="convertProposalToStudent">Transformar em criança</button>
+                </div>
+              </form>
+
+              <aside class="proposal-result glass-card">
+                <span>Simulação atual</span>
+                <strong id="proposalFinalValue">R$ 0,00</strong>
+
+                <div class="proposal-lines">
+                  <div><span>Valor bruto</span><strong id="proposalGrossValue">R$ 0,00</strong></div>
+                  <div><span>Desconto aplicado</span><strong id="proposalDiscountApplied">R$ 0,00</strong></div>
+                  <div><span>Valor final</span><strong id="proposalFinalValueSmall">R$ 0,00</strong></div>
+                </div>
+
+                <div class="proposal-message-box">
+                  <h3>Mensagem para WhatsApp</h3>
+                  <textarea id="proposalWhatsappMessage" readonly></textarea>
+                </div>
+              </aside>
+            </div>
+          </section>
+
+          <section class="panel glass-card">
+            <div class="panel-head">
+              <div>
+                <h2>Propostas salvas</h2>
+                <span>Consulte, edite, imprima ou converta em matrícula.</span>
+              </div>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Criança</th>
+                    <th>Responsável</th>
+                    <th>Horas</th>
+                    <th>Hora</th>
+                    <th>Desconto</th>
+                    <th>Final</th>
+                    <th>Data</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody id="proposalTable"></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <section class="view" id="settingsView">
+          <section class="panel glass-card">
+            <div class="panel-head">
+              <h2>Configurações e segurança</h2>
+              <span>Este sistema salva localmente e pode sincronizar backup remoto pela Vercel</span>
+            </div>
+            <div class="settings-grid settings-grid-tabs">
+              <div class="settings-tab-header glass-card">
+                <div>
+                  <h3>Configurações</h3>
+                  <p>Use as subabas para encontrar rapidamente cada ajuste do sistema.</p>
+                </div>
+              </div>
+
+              <div class="settings-subtabs" aria-label="Subabas de configurações">
+                <button type="button" class="settings-subtab is-active" data-settings-pane="school">Escola e PIX</button>
+                <button type="button" class="settings-subtab" data-settings-pane="banks">Contas bancárias</button>
+                <button type="button" class="settings-subtab" data-settings-pane="fees">Taxas</button>
+                <button type="button" class="settings-subtab" data-settings-pane="import">Dados de crianças</button>
+                <button type="button" class="settings-subtab" data-settings-pane="categories">Categorias</button>
+                <button type="button" class="settings-subtab" data-settings-pane="backup">Backup</button>
+                <button type="button" class="settings-subtab" data-settings-pane="remote">Sincronização remota</button>
+                <button type="button" class="settings-subtab" data-settings-pane="prints">Impressões</button>
+                <button type="button" class="settings-subtab" data-settings-pane="security">Segurança</button>
+              </div>
+
+              <div class="settings-pane is-active" data-settings-pane-content="school">
+                <div class="settings-card school-info-settings-card">
+                <h3>Dados da escola e PIX</h3>
+                <p>Nome, CNPJ, endereço, telefone e QR Code PIX usados nos relatórios.</p>
+                <form id="schoolInfoForm" class="school-info-form">
+                  <label>
+                    Nome da escola
+                    <input id="schoolNameSettings" placeholder="Arte de Aprender" />
+                  </label>
+                  <label>
+                    CNPJ
+                    <input id="schoolCnpj" placeholder="00.000.000/0000-00" />
+                  </label>
+                  <label>
+                    Endereço completo
+                    <input id="schoolAddress" placeholder="Rua, número, bairro, cidade - UF" />
+                  </label>
+                  <label>
+                    Telefone
+                    <input id="schoolPhone" placeholder="(00) 00000-0000" />
+                  </label>
+                  <label>
+                    QR Code do PIX
+                    <input id="schoolPixQr" type="file" accept="image/*" />
+                  </label>
+                  <div class="pix-preview-box" id="schoolPixQrPreview">
+                    <span>Nenhum QR Code cadastrado</span>
+                  </div>
+                  <div class="form-actions">
+                    <button type="submit">Salvar dados da escola</button>
+                    <button type="button" class="secondary" id="removeSchoolPixQr">Remover QR Code</button>
+                  </div>
+                </form>
+              </div>
+              </div>
+
+              <div class="settings-pane" data-settings-pane-content="banks">
+                <div class="settings-card bank-settings-card">
+                  <h3>Contas bancárias da escola</h3>
+                  <p>Cadastre as contas usadas pelo financeiro. Depois, selecione essas contas em recebimentos, despesas e saldo em contas.</p>
+                  <form class="bank-form bank-settings-form" id="bankForm">
+                    <input type="hidden" id="bankAccountId" />
+                    <label>
+                      Nome da conta
+                      <input id="bankName" placeholder="Ex.: Sicredi principal, Caixa, Nubank..." required />
+                    </label>
+                    <label>
+                      Agência
+                      <input id="bankAgency" placeholder="Ex.: 1234" />
+                    </label>
+                    <label>
+                      Conta
+                      <input id="bankNumber" placeholder="Ex.: 00000-0" />
+                    </label>
+                    <label>
+                      Chave PIX
+                      <input id="bankPixKey" placeholder="CPF, CNPJ, telefone, e-mail ou chave aleatória" />
+                    </label>
+                    <label>
+                      Saldo atual / inicial
+                      <input id="bankBalance" type="number" step="0.01" value="0" />
+                    </label>
+                    <label>
+                      Observação
+                      <input id="bankNote" placeholder="Ex.: conta principal, reserva, recebimentos..." />
+                    </label>
+                    <div class="form-actions">
+                      <button type="submit">Salvar conta bancária</button>
+                      <button type="button" class="secondary" id="clearBankForm">Limpar</button>
+                    </div>
+                  </form>
+                  <div class="table-wrap">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Conta</th>
+                          <th>Agência</th>
+                          <th>Nº da conta</th>
+                          <th>Chave PIX</th>
+                          <th>Saldo</th>
+                          <th>Ações</th>
+                        </tr>
+                      </thead>
+                      <tbody id="bankSettingsTable"></tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-pane" data-settings-pane-content="fees">
+                <div class="settings-card payment-fees-card">
+                  <h3>Taxas das formas de pagamento</h3>
+                  <p>Defina a taxa percentual de cada forma de pagamento. O financeiro aplica automaticamente, sem preencher taxa manual em cada mensalidade.</p>
+
+                  <form id="paymentFeesForm" class="payment-fees-form">
+                    <label>
+                      PIX (%)
+                      <input id="paymentFeePix" type="number" min="0" step="0.01" placeholder="0" />
+                    </label>
+                    <label>
+                      Débito (%)
+                      <input id="paymentFeeDebito" type="number" min="0" step="0.01" placeholder="0" />
+                    </label>
+                    <label>
+                      Dinheiro (%)
+                      <input id="paymentFeeDinheiro" type="number" min="0" step="0.01" placeholder="0" />
+                    </label>
+                    <label>
+                      Crédito (%)
+                      <input id="paymentFeeCredito" type="number" min="0" step="0.01" placeholder="0" />
+                    </label>
+                    <div class="form-actions wide-field">
+                      <button type="submit">Salvar taxas</button>
+                    </div>
+                  </form>
+
+                  <small>Exemplo: se o crédito tiver taxa de 2,34%, digite 2.34. Mensalidades já pagas preservam a taxa gravada no momento do recebimento.</small>
+                </div>
+              </div>
+
+              <div class="settings-pane" data-settings-pane-content="import">
+                <div class="settings-pane-grid children-data-settings-grid">
+                  <div class="settings-card import-panel settings-import-card">
+                    <div class="panel-head stackable">
+                      <div>
+                        <h3>Importar dados de crianças</h3>
+                        <span>Importe cadastros por link publicado em CSV ou arquivo CSV exportado do Google Sheets.</span>
+                      </div>
+                      <button type="button" class="secondary" id="downloadStudentTemplate">Baixar modelo CSV</button>
+                    </div>
+                    <div class="import-grid">
+                      <label class="wide-field">
+                        Link da planilha Google / CSV
+                        <input id="googleSheetUrl" placeholder="Cole o link da planilha Google ou o link publicado em CSV" />
+                      </label>
+                      <div class="import-actions">
+                        <button type="button" id="importGoogleSheet">Importar pelo link</button>
+                        <button type="button" class="secondary" id="chooseStudentsCsv">Importar arquivo CSV</button>
+                        <input type="file" id="studentsCsvFile" accept=".csv,text/csv" hidden />
+                      </div>
+                    </div>
+                    <div class="import-help">
+                      <strong>Colunas aceitas:</strong> Nome da criança, Status, Data de nascimento, Responsável, CPF do responsável, Telefone, Emergência, Endereço, Atividades, Horas contratadas, Mensalidade, Dia de vencimento e Observações.
+                      <br />
+                      <span>Para várias atividades, separe por ponto e vírgula. Exemplo: <b>Ballet; Karatê; Reforço</b>.</span>
+                    </div>
+                    <div class="import-result" id="studentImportResult"></div>
+                  </div>
+
+                  <div class="settings-card children-export-card">
+                    <div class="panel-head stackable">
+                      <div>
+                        <h3>Exportar dados de crianças</h3>
+                        <span>Exporte apenas os dados das crianças cadastradas, sem financeiro, despesas ou chamada.</span>
+                      </div>
+                    </div>
+
+                    <div class="backup-status-box">
+                      <span>Backup automático separado</span>
+                      <strong id="childrenAutoBackupStatus">Aguardando verificação</strong>
+                      <small id="childrenAutoBackupDetail">Criado todos os dias às 18h com os dados das crianças.</small>
+                    </div>
+
+                    <div class="form-actions">
+                      <button type="button" id="exportChildrenDataJson">Exportar dados em JSON</button>
+                      <button type="button" class="secondary" id="exportChildrenDataCsv">Exportar dados em CSV</button>
+                      <button type="button" class="secondary" id="createChildrenBackupNow">Criar backup das crianças agora</button>
+                      <button type="button" class="secondary" id="downloadChildrenBackupSettings">Baixar último backup das crianças</button>
+                    </div>
+
+                    <small>O JSON é recomendado para backup e restauração. O CSV é recomendado para conferência em planilha.</small>
+                  </div>
+                </div>
+              </div>
+
+              <div class="settings-pane" data-settings-pane-content="categories">
+                <div class="settings-pane-grid">
+                  <div class="settings-card expense-category-settings-card">
+                <h3>Categorias de despesas</h3>
+                <p>Cadastre categorias para organizar as contas e selecionar na subaba Despesas.</p>
+                <form id="expenseCategoryForm" class="activity-catalog-form">
+                  <input type="hidden" id="expenseCategoryId" />
+                  <label>
+                    Nome da categoria
+                    <input id="expenseCategoryName" placeholder="Ex.: Salários, Mercado, Impostos..." required />
+                  </label>
+                  <div class="form-actions">
+                    <button type="submit">Salvar categoria</button>
+                    <button type="button" class="secondary" id="clearExpenseCategoryForm">Limpar</button>
+                  </div>
+                </form>
+                <div class="activity-catalog-list" id="expenseCategoryList"></div>
+              </div>
+                  <div class="settings-card activity-settings-card">
+                <h3>Cadastro de atividades</h3>
+                <p>Cadastre as atividades oferecidas e o valor padrão. Depois, escolha e edite os valores individualmente no cadastro de cada criança.</p>
+                <form id="activityCatalogForm" class="activity-catalog-form">
+                  <input type="hidden" id="activityCatalogId" />
+                  <label>
+                    Nome da atividade
+                    <input id="activityCatalogName" placeholder="Ex.: Ballet, Karatê, Reforço..." required />
+                  </label>
+                  <label>
+                    Valor padrão
+                    <input id="activityCatalogValue" type="number" min="0" step="0.01" placeholder="0,00" />
+                  </label>
+                  <div class="form-actions">
+                    <button type="submit">Salvar atividade</button>
+                    <button type="button" class="secondary" id="clearActivityCatalogForm">Limpar</button>
+                  </div>
+                </form>
+                <div class="activity-catalog-list" id="activityCatalogList"></div>
+              </div>
+                </div>
+              </div>
+
+              <div class="settings-pane" data-settings-pane-content="backup">
+                <div class="settings-card backup-settings-card">
+                <h3>Backup dos dados</h3>
+                <p>Exporte, importe ou escolha o local do backup automático diário.</p>
+                <div class="backup-status-box">
+                  <span>Backup automático</span>
+                  <strong id="autoBackupStatus">Aguardando verificação</strong>
+                  <small id="autoBackupDetail">O backup é criado às 18h com arquivo nomeado pelo dia e mês, ou na primeira abertura após esse horário.</small>
+                  <small id="autoBackupFolderStatus">Local do backup: Downloads padrão do navegador.</small>
+                </div>
+                <div class="form-actions">
+                  <button id="exportDataSettings" class="secondary">Exportar backup manual</button>
+                  <button id="downloadAutoBackupSettings" class="secondary">Baixar último backup automático</button>
+                  <button id="chooseAutoBackupFolder" class="secondary" type="button">Escolher local do backup automático</button>
+                  <button id="clearAutoBackupFolder" class="secondary" type="button">Usar Downloads padrão</button>
+                  <button id="importDataSettings" class="secondary">Importar backup</button>
+                </div>
+              </div>
+              </div>
+
+              <div class="settings-pane" data-settings-pane-content="remote">
+                <div class="settings-card remote-sync-card">
+                  <h3>Sincronização remota Vercel</h3>
+                  <p>Use esta área para manter uma cópia remota dos dados e sincronizar entre casa, escola e outros computadores.</p>
+
+                  <form id="remoteSyncForm" class="remote-sync-form">
+                    <label class="security-toggle-row" for="remoteSyncEnabled">
+                      <span>
+                        <strong>Ativar sincronização remota</strong>
+                        <small>O app continua salvando localmente e também poderá enviar backup para a Vercel.</small>
+                      </span>
+                      <input id="remoteSyncEnabled" type="checkbox" />
+                    </label>
+
+                    <label class="security-toggle-row" for="remoteSyncAuto">
+                      <span>
+                        <strong>Sincronizar automaticamente ao salvar</strong>
+                        <small>Cada alteração é enviada e outros computadores abertos verificam novidades automaticamente a cada poucos segundos.</small>
+                      </span>
+                      <input id="remoteSyncAuto" type="checkbox" />
+                    </label>
+
+                    <label class="security-toggle-row" for="remoteSyncPullOnOpen">
+                      <span>
+                        <strong>Buscar remoto ao abrir</strong>
+                        <small>Ao abrir ou voltar para a aba, baixa a versão remota mais recente quando não há alterações locais pendentes.</small>
+                      </span>
+                      <input id="remoteSyncPullOnOpen" type="checkbox" />
+                    </label>
+
+                    <label class="remote-sync-key-field">
+                      Chave de sincronização
+                      <input id="remoteSyncKey" type="password" autocomplete="off" placeholder="Digite a mesma chave configurada na Vercel" />
+                    </label>
+
+                    <div class="remote-sync-status-box">
+                      <span>Status</span>
+                      <strong id="remoteSyncStatus">Não configurado.</strong>
+                      <small>Último envio: <b id="remoteSyncLastPush">Nunca</b></small>
+                      <small>Último download: <b id="remoteSyncLastPull">Nunca</b></small>
+                    </div>
+
+                    <div class="form-actions">
+                      <button type="submit">Salvar configuração</button>
+                      <button type="button" class="secondary" id="remoteSyncTest">Testar conexão</button>
+                      <button type="button" class="secondary" id="remoteSyncPushNow">Enviar agora para a nuvem</button>
+                      <button type="button" class="secondary" id="remoteSyncPullNow">Baixar agora da nuvem</button>
+                    </div>
+                  </form>
+
+                  <small class="remote-sync-note">
+                    Os dados são sincronizados diretamente pelo backend Python com o Supabase. A autenticação da sessão protege as operações; nenhuma chave precisa ser digitada no navegador.
+                  </small>
+                </div>
+              </div>
+
+              <div class="settings-pane" data-settings-pane-content="prints">
+                <div class="settings-pane-grid">
+                  
+                  <div class="settings-card settings-card-compact">
+                    <h3>Aparência do sistema</h3>
+                    <p>Escolha o visual do sistema para trabalhar melhor durante o dia ou à noite.</p>
+                    <label>
+                      Tema do sistema
+                      <select id="themeMode">
+                        <option value="light">Modo claro</option>
+                        <option value="dark">Modo escuro</option>
+                      </select>
+                    </label>
+                  </div>
+                  <div class="settings-card zebra-label-settings-card">
+                <h3>Etiqueta Zebra ZD230</h3>
+                <p>Configure o tamanho da etiqueta de mensalidade paga. O padrão recomendado para Zebra é 40 x 25 mm, mas você pode alterar.</p>
+                <form id="labelSettingsForm" class="label-settings-form">
+                  <label>
+                    Largura
+                    <input id="labelWidth" type="number" min="10" step="1" />
+                  </label>
+                  <label>
+                    Altura
+                    <input id="labelHeight" type="number" min="10" step="1" />
+                  </label>
+                  <label>
+                    Unidade
+                    <select id="labelUnit">
+                      <option value="mm">mm</option>
+                      <option value="cm">cm</option>
+                    </select>
+                  </label>
+                  <div class="form-actions">
+                    <button type="submit">Salvar tamanho da etiqueta</button>
+                  </div>
+                </form>
+                <small>A etiqueta mostra somente: valor pago, mês e quantidade de horas utilizadas.</small>
+              </div>
+                </div>
+              </div>
+
+              <div class="settings-pane" data-settings-pane-content="security">
+                <div class="settings-card security-access-card">
+                  <h3>Controle de acesso</h3>
+                  <p>Escolha se o sistema deve pedir senha ao abrir.</p>
+
+                  <label class="security-toggle-row" for="passwordEnabled">
+                    <span>
+                      <strong>Habilitar senha de entrada</strong>
+                      <small id="passwordStatusLabel">Senha desativada: o app abre direto no painel.</small>
+                    </span>
+                    <input id="passwordEnabled" type="checkbox" />
+                  </label>
+
+                  <small>Quando estiver desativado, o app abre direto. Quando estiver habilitado, use a senha cadastrada ou a senha padrão <strong>2704</strong>.</small>
+                </div>
+
+                <form id="passwordForm" class="settings-card">
+                  <h3>Alterar senha local</h3>
+                  <p>Use esta área apenas se quiser definir uma senha personalizada para quando a proteção estiver habilitada.</p>
+
+                  <label for="currentPassword">Senha atual</label>
+                  <input id="currentPassword" type="password" autocomplete="current-password" />
+
+                  <label for="newPassword">Nova senha</label>
+                  <input id="newPassword" type="password" minlength="4" autocomplete="new-password" />
+
+                  <button type="submit">Salvar nova senha</button>
+                </form>
+              </div>
+            </div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <template id="emptyTemplate">
+      <div class="empty">
+        <strong>Nenhum registro encontrado</strong>
+        <span>Cadastre informações ou altere o período selecionado.</span>
+      </div>
+    </template>
+    <script src="python-auth-bridge.js?v=1"></script>
+    <script src="smg-confirm-dialog.js?v=1"></script>
+    <script src="app.min.js?v=469-a3p3"></script>
+    <script src="local-persistence-reliability.js?v=1"></script>
+    <script src="remote-sync-key-fix.js?v=6"></script>
+
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("./sw.js?v=69").catch((error) => {
+            console.warn("Service Worker não registrado:", error);
+          });
+        });
+      }
+    </script>
+  </body>
+</html>
