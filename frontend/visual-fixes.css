@@ -1,0 +1,50 @@
+/* Correções visuais finais do ERP Python — carregado por último. */
+.sidebar .brand::before {
+  content: none !important;
+  display: none !important;
+  background-image: none !important;
+}
+
+.sidebar .brand .brand-menu-image {
+  display: block !important;
+  width: 132px !important;
+  height: 124px !important;
+  max-width: 100% !important;
+  max-height: none !important;
+  margin: 0 auto 4px !important;
+  padding: 8px !important;
+  object-fit: contain !important;
+  object-position: center !important;
+  border-radius: 22px !important;
+  background: #fff !important;
+  box-shadow: 0 10px 28px rgba(49,31,54,.12), inset 0 1px 0 rgba(255,255,255,.9) !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+}
+
+.tabs.menu-final-v414 .teacher-tab-link {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  min-height: 54px !important;
+  padding: 0 18px !important;
+  border: 1px solid rgba(255,255,255,.34) !important;
+  border-radius: 18px !important;
+  background: linear-gradient(135deg,#527c67,#37604d) !important;
+  color: #fff !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  filter: none !important;
+  text-shadow: 0 1px 1px rgba(0,0,0,.12) !important;
+  text-decoration: none !important;
+  font-weight: 850 !important;
+  box-shadow: 0 8px 20px rgba(49,31,54,.14), inset 0 1px 0 rgba(255,255,255,.26) !important;
+}
+
+.tabs.menu-final-v414 .teacher-tab-link:hover,
+.tabs.menu-final-v414 .teacher-tab-link:focus-visible {
+  background: linear-gradient(135deg,#5e8b75,#406d59) !important;
+  color: #fff !important;
+  opacity: 1 !important;
+  filter: brightness(1.04) !important;
+}
