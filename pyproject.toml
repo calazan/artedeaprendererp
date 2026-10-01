@@ -1,0 +1,17 @@
+[project]
+name = "artedeaprendererp"
+version = "4.8.0"
+description = "Arte de Aprender ERP - backend Python/FastAPI independente"
+requires-python = ">=3.12,<3.15"
+dependencies = [
+  "fastapi==0.141.1",
+  "uvicorn[standard]==0.52.3",
+  "psycopg[binary,pool]==3.3.4",
+  "httpx==0.28.1",
+  "python-dotenv==1.2.2",
+  "cryptography==50.0.0",
+  "pywebpush==2.4.0",
+]
+
+[tool.vercel]
+entrypoint = "app:app"
