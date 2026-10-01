@@ -1,0 +1,54 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 330" role="img" aria-labelledby="title desc">
+  <title id="title">Arte de Aprender ERP</title>
+  <desc id="desc">Organização simples para sua rotina.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0" stop-color="#fffdf8"/>
+      <stop offset="0.62" stop-color="#fffaf5"/>
+      <stop offset="1" stop-color="#f4e8f5"/>
+    </linearGradient>
+    <linearGradient id="purple" x1="0" x2="1">
+      <stop offset="0" stop-color="#7a3f9c"/>
+      <stop offset="1" stop-color="#a86abb"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-20%" width="120%" height="150%">
+      <feDropShadow dx="0" dy="7" stdDeviation="10" flood-color="#4e2b5c" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+  <rect x="6" y="6" width="1588" height="318" rx="28" fill="url(#bg)" filter="url(#shadow)"/>
+  <path d="M6 242C115 220 174 226 260 270c56 29 103 40 170 54H6z" fill="#d9c1e1" opacity=".88"/>
+  <path d="M1180 6h414v318h-545c69-34 135-71 194-123 66-59 104-124 137-195z" fill="#ead8ef" opacity=".58"/>
+  <path d="M1265 324h329V134c-100 21-178 59-241 111-39 32-70 58-88 79z" fill="#cfadd9" opacity=".44"/>
+
+  <g transform="translate(150 92)">
+    <path d="M0 82V23c0-9 7-16 16-16h55c12 0 25 5 34 14 9-9 22-14 34-14h55c9 0 16 7 16 16v59c-34 0-66 12-105 38C66 94 34 82 0 82z" fill="#fff" opacity=".96"/>
+    <path d="M2 76c35 0 69 13 103 37V30C77 14 39 12 8 18z" fill="#8d52ac" opacity=".92"/>
+    <path d="M208 76c-35 0-69 13-103 37V30c28-16 66-18 97-12z" fill="#a76abb" opacity=".92"/>
+    <path d="M20 62c27 2 51 10 72 24M190 62c-27 2-51 10-72 24" fill="none" stroke="#c9a6d2" stroke-width="5" stroke-linecap="round"/>
+    <g transform="translate(80 -28)" stroke="#f6b33b" stroke-linecap="round">
+      <path d="M25 0v17M25 54v17M-2 27h17M35 27h17" stroke-width="7"/>
+      <path d="M4 6l11 11M46 6L35 17M4 48l11-11M46 48L35 37" stroke-width="5"/>
+      <rect x="18" y="12" width="14" height="30" rx="3" fill="#f6b33b" stroke="none"/>
+      <rect x="10" y="20" width="30" height="14" rx="3" fill="#f6b33b" stroke="none"/>
+    </g>
+  </g>
+
+  <text x="390" y="150" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="72" font-weight="700" fill="#7d459c">Saber<tspan fill="#f5b43d">+</tspan><tspan font-weight="500" fill="#7f4c9e"> Gestão</tspan></text>
+  <text x="392" y="207" font-family="Inter,Segoe UI,Arial,sans-serif" font-size="31" font-weight="400" fill="#737089">Organização simples para sua rotina.</text>
+
+  <g opacity=".26" fill="none" stroke="#9e67b1" stroke-width="7" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="1104" y="61" width="128" height="116" rx="19"/>
+    <path d="M1132 50v28M1204 50v28M1105 92h126M1138 132l25 24 43-48"/>
+    <path d="M1332 105c0-24 18-43 41-43 18 0 34 11 39 28 5-4 12-6 19-6 20 0 36 16 36 36 0 19-15 34-34 34h-67c-19 0-34-15-34-34 0-5 0-10 0-15z"/>
+  </g>
+  <g opacity=".20" fill="#9e67b1">
+    <ellipse cx="1028" cy="234" rx="9" ry="45" transform="rotate(-28 1028 234)"/>
+    <ellipse cx="1056" cy="208" rx="9" ry="36" transform="rotate(32 1056 208)"/>
+    <path d="M1044 270c-3-39 4-72 24-105" fill="none" stroke="#9e67b1" stroke-width="6" stroke-linecap="round"/>
+  </g>
+  <g fill="#9e67b1" opacity=".22">
+    <circle cx="1480" cy="211" r="6"/><circle cx="1513" cy="211" r="6"/><circle cx="1546" cy="211" r="6"/>
+    <circle cx="1480" cy="244" r="6"/><circle cx="1513" cy="244" r="6"/><circle cx="1546" cy="244" r="6"/>
+    <circle cx="1480" cy="277" r="6"/><circle cx="1513" cy="277" r="6"/><circle cx="1546" cy="277" r="6"/>
+  </g>
+</svg>
