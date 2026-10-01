@@ -84,10 +84,24 @@ def test_predictable_session_fallback_is_not_allowed(monkeypatch):
         create_session("00000000-0000-0000-0000-000000000001", "owner")
 
 
-def test_server_side_compat_session_key_is_accepted_during_migration(monkeypatch):
+def test_neon_database_secret_can_sign_session_when_dedicated_secret_is_absent(monkeypatch):
+    monkeypatch.delenv("SESSION_SECRET", raising=False)
+    monkeypatch.delenv("REMOTE_SYNC_KEY", raising=False)
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://user:strong-db-secret@ep-example.neon.tech/neondb?sslmode=require",
+    )
+    token = create_session("00000000-0000-0000-0000-000000000001", "owner")
+    assert session_from_request(request_with_cookie(token))["role"] == "owner"
+
+
+def test_legacy_internal_secret_can_strengthen_neon_session_derivation(monkeypatch):
     monkeypatch.delenv("SESSION_SECRET", raising=False)
     monkeypatch.setenv("REMOTE_SYNC_KEY", "x" * 64)
-    monkeypatch.setenv("DATABASE_URL", "postgresql://user:strong-db-secret@ep-example.neon.tech/neondb?sslmode=require")
+    monkeypatch.setenv(
+        "DATABASE_URL",
+        "postgresql://user:strong-db-secret@ep-example.neon.tech/neondb?sslmode=require",
+    )
     token = create_session("00000000-0000-0000-0000-000000000001", "owner")
     assert session_from_request(request_with_cookie(token))["role"] == "owner"
 

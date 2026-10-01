@@ -48,15 +48,20 @@ def _session_secret() -> bytes:
             raise SessionConfigurationError("SESSION_SECRET precisa ter pelo menos 32 bytes.")
         return hashlib.sha256(b"arte-erp-session-v1\x00" + raw).digest()
 
-    # Compatibilidade temporária: apenas material secreto server-side.
-    legacy = remote_sync_key().encode("utf-8")
+    # Fallback server-side para ambientes Vercel/Neon nos quais SESSION_SECRET
+    # ainda não foi provisionado. DATABASE_URL contém credencial privada do banco,
+    # nunca é enviada ao navegador e é adequada como material secreto para derivação.
+    # SESSION_SECRET continua sendo a opção preferencial e pode ser configurada a
+    # qualquer momento; a troca apenas invalida sessões antigas.
     db_secret_material = database_url().encode("utf-8")
-    if legacy and db_secret_material:
-        return hashlib.sha256(
-            b"arte-erp-session-compat\x00" + legacy + b"\x00" + db_secret_material
-        ).digest()
+    if db_secret_material:
+        legacy = remote_sync_key().encode("utf-8")
+        context = b"arte-erp-session-neon-v1\x00"
+        if legacy:
+            return hashlib.sha256(context + legacy + b"\x00" + db_secret_material).digest()
+        return hashlib.sha256(context + db_secret_material).digest()
 
-    raise SessionConfigurationError("SESSION_SECRET não configurado.")
+    raise SessionConfigurationError("Segredo de sessão indisponível.")
 
 
 def session_configuration_ready() -> bool:
