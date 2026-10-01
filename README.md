@@ -50,3 +50,12 @@ Depois do primeiro usuário, acesse `/login` e entre com o e-mail e a senha cria
 - `/api/integrity`: integridade do banco para administradores.
 
 As antigas rotas com “supabase” no nome permanecem somente como aliases de compatibilidade com versões anteriores do frontend; elas usam o mesmo Neon/PostgreSQL e não acessam Supabase Auth.
+
+
+## Política de dados locais
+
+O ERP é operado como sistema online. Durante uma sessão autenticada, a versão atual ainda mantém um estado transitório no navegador por compatibilidade com o frontend legado; esse estado é apagado no logout, na expiração da sessão e ao abrir a tela de login. Esta etapa é temporária até a migração do frontend para APIs por entidade.
+
+Não são permitidos backups locais automáticos, cópias de erro ou filas offline contendo dados pessoais. O Service Worker guarda somente assets estáticos versionados (JavaScript, CSS e imagens), nunca HTML autenticado nem respostas de API.
+
+O navegador pode manter apenas preferências não pessoais enquanto a sessão estiver ativa, por exemplo cores de navegação e estado visual. Nenhuma preferência desse tipo deve conter nomes, CPF, contatos, dados de saúde, financeiro ou documentos. Ao encerrar a sessão, todas as chaves com prefixo `arteDeAprenderERP.` são removidas de `localStorage` e `sessionStorage`, e os caches do aplicativo são apagados.

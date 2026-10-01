@@ -451,13 +451,7 @@
     });
     try { renderStudentActivityPicker(existing?.activityItems || []); } catch {}
 
-    sessionStorage.setItem(PENDING_ENROLLMENT_KEY, JSON.stringify({
-      preregistrationId: record.id,
-      protocol: record.protocol || "",
-      existingStudentId: existing?.id || "",
-      childName: data.childName || "",
-      birthDate: data.birthDate || "",
-    }));
+    sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(record.id));
     await setStatus(record, "reviewing", false);
     try { switchView("students"); } catch {
       document.querySelector('[data-view="students"]')?.click();
@@ -505,11 +499,11 @@
     form.addEventListener("submit", () => {
       const raw = sessionStorage.getItem(PENDING_ENROLLMENT_KEY);
       if (!raw) return;
-      let pending;
-      try { pending = JSON.parse(raw); } catch { return; }
-      const requestedId = document.querySelector("#studentId")?.value || pending.existingStudentId || "";
-      const childName = document.querySelector("#studentName")?.value.trim() || pending.childName || "";
-      const birthDate = document.querySelector("#birthDate")?.value || pending.birthDate || "";
+      const preregistrationId = String(raw || "").trim();
+      if (!preregistrationId) return;
+      const requestedId = document.querySelector("#studentId")?.value || "";
+      const childName = document.querySelector("#studentName")?.value.trim() || "";
+      const birthDate = document.querySelector("#birthDate")?.value || "";
 
       window.setTimeout(async () => {
         let student;
@@ -520,7 +514,7 @@
         if (!student) return;
         try {
           await request("PATCH", {
-            id: pending.preregistrationId,
+            id: preregistrationId,
             status: "enrolled",
             enrolledStudentId: student.id,
           });

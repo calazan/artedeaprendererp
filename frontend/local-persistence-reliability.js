@@ -1,78 +1,57 @@
-// Confiabilidade local do SMG: protege gravações, limita backups e faz flush ao sair.
+// Persistência transitória durante a sessão ativa.
+// Não cria cópias de backup locais; backups permanentes pertencem ao servidor.
 (() => {
   if (window.__smgLocalPersistenceReliabilityLoaded) return;
   window.__smgLocalPersistenceReliabilityLoaded = true;
 
   const STORAGE_KEY = "arteDeAprenderERP.v4";
-  const AUTO_PREFIX = "arteDeAprenderERP.autoBackup.";
-  const CHILDREN_PREFIX = "arteDeAprenderERP.childrenBackup.";
-  const ERROR_PREFIX = `${STORAGE_KEY}_backup_erro_`;
-  const RETENTION = { [AUTO_PREFIX]: 3, [CHILDREN_PREFIX]: 3, [ERROR_PREFIX]: 2 };
   const nativeSetItem = Storage.prototype.setItem;
   let warningShown = false;
 
-  function backupKeys(prefix) {
-    const keys = [];
-    for (let i = 0; i < localStorage.length; i += 1) {
-      const key = localStorage.key(i);
-      if (key?.startsWith(prefix)) keys.push(key);
-    }
-    return keys.sort().reverse();
-  }
-
-  function prunePrefix(prefix, keep) {
-    backupKeys(prefix).slice(keep).forEach((key) => {
-      try { localStorage.removeItem(key); } catch {}
-    });
-  }
-
-  function pruneBackups() {
-    Object.entries(RETENTION).forEach(([prefix, keep]) => prunePrefix(prefix, keep));
+  function isForbiddenBackupKey(key = "") {
+    const value = String(key || "");
+    return value.startsWith("arteDeAprenderERP.autoBackup.")
+      || value.startsWith("arteDeAprenderERP.childrenBackup.")
+      || value.includes("_backup_erro_");
   }
 
   function notifyStorageProblem() {
     if (warningShown) return;
     warningShown = true;
-    const message = "Armazenamento local cheio. Backups antigos foram limpos; exporte um backup manual se o aviso voltar.";
+    const message = "Não foi possível manter o estado temporário neste navegador. Verifique o espaço disponível e a conexão.";
     try {
       if (typeof window.showToast === "function") window.showToast(message);
-      else {
-        const toast = document.querySelector("#toast");
-        if (toast) {
-          toast.textContent = message;
-          toast.classList.add("is-visible");
-        }
-      }
     } catch {}
-    console.error("SMG: falha ao gravar no armazenamento local por falta de espaço.");
+    console.error("Arte de Aprender ERP: falha ao gravar estado transitório no navegador.");
   }
 
   function isQuotaError(error) {
-    return error?.name === "QuotaExceededError" || error?.name === "NS_ERROR_DOM_QUOTA_REACHED" || error?.code === 22 || error?.code === 1014;
+    return error?.name === "QuotaExceededError"
+      || error?.name === "NS_ERROR_DOM_QUOTA_REACHED"
+      || error?.code === 22
+      || error?.code === 1014;
   }
 
-  Storage.prototype.setItem = function smgReliableSetItem(key, value) {
-    if (this !== localStorage) return nativeSetItem.call(this, key, value);
+  Storage.prototype.setItem = function onlineOnlySetItem(key, value) {
+    if (this === localStorage && isForbiddenBackupKey(key)) return;
     try {
       nativeSetItem.call(this, key, value);
-      if (String(key).startsWith(AUTO_PREFIX) || String(key).startsWith(CHILDREN_PREFIX) || String(key).startsWith(ERROR_PREFIX)) {
-        pruneBackups();
-      }
-      return;
     } catch (error) {
-      if (!isQuotaError(error)) throw error;
-      pruneBackups();
-      // Segunda tentativa após liberar as cópias redundantes.
-      try {
-        nativeSetItem.call(this, key, value);
-        notifyStorageProblem();
-        return;
-      } catch (retryError) {
-        notifyStorageProblem();
-        throw retryError;
-      }
+      if (isQuotaError(error)) notifyStorageProblem();
+      throw error;
     }
   };
+
+  function removeLegacyLocalBackups() {
+    try {
+      const keys = [];
+      for (let index = 0; index < localStorage.length; index += 1) {
+        const key = localStorage.key(index);
+        if (isForbiddenBackupKey(key)) keys.push(key);
+      }
+      keys.forEach((key) => localStorage.removeItem(key));
+    } catch {}
+  }
 
   function flushPendingSave() {
     try {
@@ -83,11 +62,11 @@
       if (window.state) nativeSetItem.call(localStorage, STORAGE_KEY, JSON.stringify(window.state));
     } catch (error) {
       if (isQuotaError(error)) notifyStorageProblem();
-      else console.warn("SMG: não foi possível concluir o salvamento antes de sair.", error);
+      else console.warn("Arte de Aprender ERP: não foi possível concluir o salvamento transitório.", error);
     }
   }
 
-  pruneBackups();
+  removeLegacyLocalBackups();
   document.addEventListener("visibilitychange", () => {
     if (document.visibilityState === "hidden") flushPendingSave();
   });

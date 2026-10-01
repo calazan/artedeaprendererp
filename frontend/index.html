@@ -1406,20 +1406,11 @@
                       </div>
                     </div>
 
-                    <div class="backup-status-box">
-                      <span>Backup automático separado</span>
-                      <strong id="childrenAutoBackupStatus">Aguardando verificação</strong>
-                      <small id="childrenAutoBackupDetail">Criado todos os dias às 18h com os dados das crianças.</small>
-                    </div>
-
                     <div class="form-actions">
-                      <button type="button" id="exportChildrenDataJson">Exportar dados em JSON</button>
                       <button type="button" class="secondary" id="exportChildrenDataCsv">Exportar dados em CSV</button>
-                      <button type="button" class="secondary" id="createChildrenBackupNow">Criar backup das crianças agora</button>
-                      <button type="button" class="secondary" id="downloadChildrenBackupSettings">Baixar último backup das crianças</button>
                     </div>
 
-                    <small>O JSON é recomendado para backup e restauração. O CSV é recomendado para conferência em planilha.</small>
+                    <small>Não são criados backups locais de dados pessoais. A exportação CSV é uma ação manual de relatório.</small>
                   </div>
                 </div>
               </div>
@@ -1467,22 +1458,14 @@
 
               <div class="settings-pane" data-settings-pane-content="backup">
                 <div class="settings-card backup-settings-card">
-                <h3>Backup dos dados</h3>
-                <p>Exporte, importe ou escolha o local do backup automático diário.</p>
-                <div class="backup-status-box">
-                  <span>Backup automático</span>
-                  <strong id="autoBackupStatus">Aguardando verificação</strong>
-                  <small id="autoBackupDetail">O backup é criado às 18h com arquivo nomeado pelo dia e mês, ou na primeira abertura após esse horário.</small>
-                  <small id="autoBackupFolderStatus">Local do backup: Downloads padrão do navegador.</small>
+                  <h3>Backup no servidor</h3>
+                  <p>O ERP não grava arquivos de backup neste dispositivo. Os snapshots de proteção são mantidos no servidor.</p>
+                  <div class="backup-status-box">
+                    <span>Proteção dos dados</span>
+                    <strong id="autoBackupStatus">Backup local desativado</strong>
+                    <small id="autoBackupDetail">Nenhum backup com dados pessoais é criado no localStorage, sessionStorage ou Downloads.</small>
+                  </div>
                 </div>
-                <div class="form-actions">
-                  <button id="exportDataSettings" class="secondary">Exportar backup manual</button>
-                  <button id="downloadAutoBackupSettings" class="secondary">Baixar último backup automático</button>
-                  <button id="chooseAutoBackupFolder" class="secondary" type="button">Escolher local do backup automático</button>
-                  <button id="clearAutoBackupFolder" class="secondary" type="button">Usar Downloads padrão</button>
-                  <button id="importDataSettings" class="secondary">Importar backup</button>
-                </div>
-              </div>
               </div>
 
               <div class="settings-pane" data-settings-pane-content="security">
@@ -1528,17 +1511,17 @@
         <span>Cadastre informações ou altere o período selecionado.</span>
       </div>
     </template>
-    <script src="python-auth-bridge.js?v=1"></script>
+    <script src="python-auth-bridge.js?v=3"></script>
     <script src="smg-confirm-dialog.js?v=1"></script>
-    <script src="app.min.js?v=469-a3p3"></script>
-    <script src="local-persistence-reliability.js?v=1"></script>
+    <script src="app.min.js?v=469-online1"></script>
+    <script src="local-persistence-reliability.js?v=2"></script>
     <script src="remote-sync-key-fix.js?v=8"></script>
     <script src="system-health-indicator.js?v=1"></script>
 
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
-          navigator.serviceWorker.register("./sw.js?v=20261001").catch((error) => {
+          navigator.serviceWorker.register("./sw.js?v=20261001-online1").catch((error) => {
             console.warn("Service Worker não registrado:", error);
           });
         });

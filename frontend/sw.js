@@ -1,21 +1,19 @@
-const CACHE_NAME = "arte-de-aprender-visual-20261001";
+const CACHE_NAME = "arte-de-aprender-static-20261001-online-only";
 const PRECACHE = [
-  "./",
-  "./index.html",
   "./styles.min.css?v=20261001",
   "./menu-brand.css?v=20261001",
   "./pre-app-state-guard.js?v=1",
-  "./python-auth-bridge.js?v=1",
+  "./python-auth-bridge.js?v=3",
   "./smg-confirm-dialog.js?v=1",
   "./app.min.js?v=469-a3p3",
-  "./local-persistence-reliability.js?v=1",
+  "./local-persistence-reliability.js?v=2",
   "./remote-sync-key-fix.js?v=8",
   "./supabase-admin-sync.js?v=5",
   "./stability-core-fix.js?v=1",
   "./system-health-indicator.js?v=1",
   "./extra-event-attendance-id-fix.js?v=2",
-  "./pre-registration-admin.js?v=3",
-  "./pre-registration-recovery-fix.js?v=1",
+  "./pre-registration-admin.js?v=4",
+  "./pre-registration-recovery-fix.js?v=2",
   "./receipt-monthly-value-only-fix.js?v=3",
   "./zebra-logo-label-fix.js?v=2",
   "./general-report-activity-value-fix.js?v=2",
@@ -37,7 +35,6 @@ const PRECACHE = [
   "./whatsapp-reminders.js?v=1",
   "./whatsapp-reminders.css?v=1",
   "./main-menu-colors.css?v=20261001",
-  "./manifest.json?v=3",
   "./banner-login.webp?v=20261001",
   "./banner-dashboard.webp?v=20261001",
   "./banner-precadastro.webp?v=20261001",
@@ -74,8 +71,7 @@ self.addEventListener("push", (event) => {
   try { payload = event.data?.json?.() || {}; } catch {
     try { payload = { body: event.data?.text?.() || "Você tem uma tarefa no Arte de Aprender." }; } catch { payload = {}; }
   }
-  const title = payload.title || "Arte de Aprender ERP";
-  const options = {
+  event.waitUntil(self.registration.showNotification(payload.title || "Arte de Aprender ERP", {
     body: payload.body || "Você tem uma tarefa agendada.",
     icon: payload.icon || "/app-icon-192.png?v=20261001",
     badge: payload.badge || "/app-icon-192.png?v=20261001",
@@ -83,13 +79,12 @@ self.addEventListener("push", (event) => {
     renotify: payload.renotify === true,
     requireInteraction: payload.requireInteraction === true,
     data: payload.data || { url: "/?smgView=tasks" },
-  };
-  event.waitUntil(self.registration.showNotification(title, options));
+  }));
 });
 
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = new URL(event.notification?.data?.url || "/?smgView=tasks", self.location.origin).href;
+  const target = new URL(event.notification?.data?.url || "/", self.location.origin).href;
   event.waitUntil((async () => {
     const windows = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     const existing = windows.find((client) => new URL(client.url).origin === self.location.origin);
@@ -102,59 +97,34 @@ self.addEventListener("notificationclick", (event) => {
   })());
 });
 
-function isVersionedAsset(url) {
-  return url.searchParams.has("v") && /\.(?:js|css|png|webp|svg)$/i.test(url.pathname);
+function isVersionedStaticAsset(url) {
+  return url.searchParams.has("v")
+    && /\.(?:js|css|png|webp|svg)$/i.test(url.pathname);
 }
 
-function isRuntimeShell(url, request) {
-  if (request.mode === "navigate") return true;
-  return /\.(?:js|css|html|json)$/i.test(url.pathname);
-}
-
-async function injectShellHTML(response) {
-  if (!response?.ok) return response;
-  const contentType = response.headers.get("content-type") || "";
-  if (!contentType.includes("text/html")) return response;
-  let html = await response.text();
-  if (!html.includes("main-menu-colors.css")) {
-    const tag = '<link rel="stylesheet" href="/main-menu-colors.css?v=20261001" data-main-menu-colors-direct />';
-    html = html.includes("</head>") ? html.replace("</head>", `  ${tag}\n  </head>`) : `${tag}${html}`;
-  }
-  if (!html.includes("pre-app-state-guard.js")) {
-    const guard = '<script src="/pre-app-state-guard.js?v=1" data-pre-app-state-guard></script>';
-    const appScript = /<script\s+src=["'](?:\/)?app(?:\.min)?\.js(?:\?[^"']*)?["']><\/script>/i;
-    if (appScript.test(html)) html = html.replace(appScript, `${guard}\n    $&`);
-    else if (html.includes("</body>")) html = html.replace("</body>", `  ${guard}\n  </body>`);
-  }
-  const headers = new Headers(response.headers);
-  headers.delete("content-length");
-  headers.set("cache-control", "no-store");
-  return new Response(html, { status: response.status, statusText: response.statusText, headers });
+function offlinePage() {
+  return new Response(
+    `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sem conexão</title></head><body style="font-family:system-ui;padding:32px;text-align:center"><h1>Sem conexão</h1><p>O Arte de Aprender ERP funciona online. Reconecte-se à internet e tente novamente.</p><button onclick="location.reload()">Tentar novamente</button></body></html>`,
+    { status: 503, headers: { "Content-Type": "text/html; charset=utf-8", "Cache-Control": "no-store" } }
+  );
 }
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+
+  if (event.request.mode === "navigate") {
+    event.respondWith(fetch(event.request, { cache: "no-store" }).catch(offlinePage));
+    return;
+  }
+
   if (url.pathname.startsWith("/api/")) {
     event.respondWith(fetch(event.request, { cache: "no-store" }));
     return;
   }
-  if (event.request.mode === "navigate") {
-    event.respondWith((async () => {
-      try {
-        const network = await fetch(event.request, { cache: "no-store" });
-        const patched = await injectShellHTML(network);
-        if (patched.ok) (await caches.open(CACHE_NAME)).put(event.request, patched.clone());
-        return patched;
-      } catch {
-        const cached = (await caches.match(event.request)) || (await caches.match("./index.html"));
-        return cached ? injectShellHTML(cached) : Response.error();
-      }
-    })());
-    return;
-  }
-  if (isVersionedAsset(url)) {
+
+  if (isVersionedStaticAsset(url)) {
     event.respondWith((async () => {
       const cached = await caches.match(event.request);
       if (cached) return cached;
@@ -164,23 +134,6 @@ self.addEventListener("fetch", (event) => {
     })());
     return;
   }
-  if (isRuntimeShell(url, event.request)) {
-    event.respondWith((async () => {
-      try {
-        const network = await fetch(event.request, { cache: "no-store" });
-        if (network.ok) (await caches.open(CACHE_NAME)).put(event.request, network.clone());
-        return network;
-      } catch {
-        return (await caches.match(event.request)) || Response.error();
-      }
-    })());
-    return;
-  }
-  event.respondWith((async () => {
-    const cached = await caches.match(event.request);
-    if (cached) return cached;
-    const network = await fetch(event.request).catch(() => null);
-    if (network?.ok) (await caches.open(CACHE_NAME)).put(event.request, network.clone());
-    return network || Response.error();
-  })());
+
+  event.respondWith(fetch(event.request, { cache: "no-store" }));
 });

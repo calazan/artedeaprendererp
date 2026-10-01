@@ -1,8 +1,58 @@
 (() => {
   const SESSION_KEY = "arteDeAprenderERP.session";
-  // Non-secret compatibility sentinel. The Python backend authorizes API calls by
-  // the signed HttpOnly session cookie; this value is never treated as a secret.
+  const STORAGE_PREFIX = "arteDeAprenderERP.";
   const SESSION_SYNC_SENTINEL = "python-session-authenticated-bridge-v1";
+  const nativeFetch = window.fetch.bind(window);
+  let clearingSession = false;
+
+  function prefixedKeys(storage) {
+    const keys = [];
+    try {
+      for (let index = 0; index < storage.length; index += 1) {
+        const key = storage.key(index);
+        if (key?.startsWith(STORAGE_PREFIX)) keys.push(key);
+      }
+    } catch {}
+    return keys;
+  }
+
+  async function clearClientData() {
+    for (const storage of [localStorage, sessionStorage]) {
+      prefixedKeys(storage).forEach((key) => {
+        try { storage.removeItem(key); } catch {}
+      });
+    }
+    if ("caches" in window) {
+      try {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((key) => caches.delete(key)));
+      } catch {}
+    }
+  }
+
+  async function expireClientSession() {
+    if (clearingSession) return;
+    clearingSession = true;
+    try { await clearClientData(); } finally { location.replace("/login"); }
+  }
+
+  window.__arteDeAprenderClearClientData = clearClientData;
+
+  window.fetch = async function authenticatedFetch(input, init) {
+    const response = await nativeFetch(input, init);
+    try {
+      const url = new URL(typeof input === "string" || input instanceof URL ? input : input.url, location.href);
+      if (
+        response.status === 401
+        && url.origin === location.origin
+        && url.pathname.startsWith("/api/")
+        && url.pathname !== "/api/auth/login"
+      ) {
+        await expireClientSession();
+      }
+    } catch {}
+    return response;
+  };
 
   sessionStorage.setItem(SESSION_KEY, "true");
 
@@ -10,9 +60,9 @@
     event.preventDefault();
     event.stopImmediatePropagation();
     try {
-      await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+      await nativeFetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
     } finally {
-      sessionStorage.removeItem(SESSION_KEY);
+      await clearClientData();
       location.replace("/login");
     }
   }
@@ -53,7 +103,7 @@
       const toggle = securityCard.querySelector('label[for="passwordEnabled"]');
       const legacyNote = [...securityCard.querySelectorAll("small")].find((item) => /2704|senha padrão/i.test(item.textContent || ""));
       if (title) title.textContent = "Acesso protegido pela conta";
-      if (text) text.textContent = "O acesso ao ERP é feito pelo login autorizado no Supabase e por uma sessão segura do backend Python.";
+      if (text) text.textContent = "O acesso ao ERP é feito por uma conta autorizada e uma sessão segura do backend Python.";
       if (toggle) toggle.hidden = true;
       if (legacyNote) legacyNote.hidden = true;
     }
@@ -61,8 +111,7 @@
   }
 
   function updateRuntimeBranding() {
-    document.body?.setAttribute("data-app-version", "4.8.0");
-    if (/V4\.6\.9/i.test(document.title)) document.title = document.title.replace(/V4\.6\.9/i, "V4.8.0");
+    if (document.body) document.body.dataset.appVersion = document.body.dataset.appVersion || "";
   }
 
   function bind() {
@@ -76,8 +125,6 @@
     installSessionCompatibility();
     simplifySecurityUi();
     updateRuntimeBranding();
-    // Some V4-compatible modules mount after DOMContentLoaded. Re-apply only the
-    // session/UI bridge; no secret or remote repository is loaded here.
     window.setTimeout(() => { installSessionCompatibility(); simplifySecurityUi(); }, 500);
     window.setTimeout(() => { installSessionCompatibility(); simplifySecurityUi(); }, 2000);
   }

@@ -226,6 +226,7 @@ document.getElementById("login").addEventListener("submit", async (event) => {{
             "X-Frame-Options": "DENY",
             "X-Content-Type-Options": "nosniff",
             "Referrer-Policy": "same-origin",
+            "Clear-Site-Data": "\"cache\", \"storage\"",
         },
     )
 

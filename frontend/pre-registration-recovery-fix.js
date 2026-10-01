@@ -214,7 +214,7 @@
       .finally(() => { button.disabled = false; });
   }, true);
 
-  async function findSavedStudent(pending, requestedId, childName, birthDate) {
+  async function findSavedStudent(requestedId, childName, birthDate) {
     for (let attempt = 0; attempt < 12; attempt += 1) {
       let student = null;
       try {
@@ -228,24 +228,24 @@
     return null;
   }
 
-  async function finishEnrollmentSafely(pending, requestedId, childName, birthDate) {
-    const student = await findSavedStudent(pending, requestedId, childName, birthDate);
+  async function finishEnrollmentSafely(preregistrationId, requestedId, childName, birthDate) {
+    const student = await findSavedStudent(requestedId, childName, birthDate);
     if (!student) {
-      sessionStorage.setItem(PENDING_ENROLLMENT_KEY, JSON.stringify(pending));
+      sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(preregistrationId));
       toast("A criança ainda não foi confirmada no cadastro oficial. Salve novamente para concluir a matrícula.");
       return;
     }
 
     const synced = await pushSupabase();
     if (!synced) {
-      sessionStorage.setItem(PENDING_ENROLLMENT_KEY, JSON.stringify({ ...pending, existingStudentId: student.id }));
+      sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(preregistrationId));
       toast("A criança foi salva neste aparelho, mas o Supabase ainda não confirmou o envio. O pré-cadastro continuará em conferência para evitar perda de dados.");
       return;
     }
 
     try {
       await request("PATCH", {
-        id: pending.preregistrationId,
+        id: preregistrationId,
         status: "enrolled",
         enrolledStudentId: student.id,
       });
@@ -253,7 +253,7 @@
       toast("Matrícula efetivada, confirmada no Supabase e pré-cadastro concluído.");
       window.__saberMaisPreRegistrations?.refresh?.();
     } catch (error) {
-      sessionStorage.setItem(PENDING_ENROLLMENT_KEY, JSON.stringify({ ...pending, existingStudentId: student.id }));
+      sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(preregistrationId));
       console.error("Falha ao concluir pré-cadastro após sincronização", error);
       toast("A criança já está salva no Supabase, mas o pré-cadastro ainda precisa ser concluído. Tente salvar novamente.");
     }
@@ -267,19 +267,19 @@
     const raw = sessionStorage.getItem(PENDING_ENROLLMENT_KEY);
     if (!raw) return;
 
-    let pending;
-    try { pending = JSON.parse(raw); } catch { return; }
+    const preregistrationId = String(raw || "").trim();
+    if (!preregistrationId) return;
 
-    const requestedId = document.querySelector("#studentId")?.value || pending.existingStudentId || "";
-    const childName = document.querySelector("#studentName")?.value.trim() || pending.childName || "";
-    const birthDate = document.querySelector("#birthDate")?.value || pending.birthDate || "";
+    const requestedId = document.querySelector("#studentId")?.value || "";
+    const childName = document.querySelector("#studentName")?.value.trim() || "";
+    const birthDate = document.querySelector("#birthDate")?.value || "";
 
     // O listener de captura do formulário original encontrará a chave vazia e não encerrará
     // o pré-cadastro prematuramente.
     sessionStorage.removeItem(PENDING_ENROLLMENT_KEY);
     window.setTimeout(() => {
-      finishEnrollmentSafely(pending, requestedId, childName, birthDate).catch((error) => {
-        sessionStorage.setItem(PENDING_ENROLLMENT_KEY, JSON.stringify(pending));
+      finishEnrollmentSafely(preregistrationId, requestedId, childName, birthDate).catch((error) => {
+        sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(preregistrationId));
         console.error("Falha na conclusão segura do pré-cadastro", error);
         toast("Não foi possível confirmar a matrícula no Supabase. O pré-cadastro permanecerá em conferência.");
       });
