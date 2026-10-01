@@ -81,10 +81,6 @@ async def employees_api(request: Request):
         return json_response({"ok": False, "error": "A requisição excede o limite seguro de 4 MiB."}, 413)
     except ValueError:
         return json_response({"ok": False, "error": "JSON inválido."}, 400)
-    except PayloadTooLarge:
-        return json_response({"ok": False, "error": "A requisição excede o limite seguro de 4 MiB."}, 413)
-    except ValueError:
-        return json_response({"ok": False, "error": "JSON inválido."}, 400)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return json_response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
@@ -163,6 +159,10 @@ async def employee_documents_api(request: Request):
             }
         )
         return json_response({"ok": True, "document": document}, 201)
+    except PayloadTooLarge:
+        return json_response({"ok": False, "error": "A requisição excede o limite seguro de 4 MiB."}, 413)
+    except ValueError:
+        return json_response({"ok": False, "error": "JSON inválido."}, 400)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return json_response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
