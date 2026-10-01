@@ -8,13 +8,12 @@ import json
 import time
 from urllib.parse import quote
 
-import httpx
 from fastapi import APIRouter, Request
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from . import APP_VERSION
-from .config import database_url, publishable_key, remote_sync_key, session_secret, supabase_url
-from .db import connection
+from .auth_store import authenticate_user, get_active_membership
+from .config import database_configured, database_url, remote_sync_key, session_secret
 from .preregistration import consume_rate_limit
 
 SESSION_COOKIE = "smg_session"
@@ -47,17 +46,14 @@ def _session_secret() -> bytes:
         raw = configured.encode("utf-8")
         if len(raw) < 32:
             raise SessionConfigurationError("SESSION_SECRET precisa ter pelo menos 32 bytes.")
-        return hashlib.sha256(b"smg-session-v3\x00" + raw).digest()
+        return hashlib.sha256(b"arte-erp-session-v1\x00" + raw).digest()
 
-    # Compatibilidade segura durante a migração: usa apenas segredos server-side
-    # já existentes. Nunca deriva assinatura de URL pública, literal previsível ou
-    # chave publishable. O objetivo é permitir implantação sem derrubar logins
-    # enquanto SESSION_SECRET é adotado como segredo dedicado.
+    # Compatibilidade temporária: apenas material secreto server-side.
     legacy = remote_sync_key().encode("utf-8")
     db_secret_material = database_url().encode("utf-8")
     if legacy and db_secret_material:
         return hashlib.sha256(
-            b"smg-session-v3-compat\x00" + legacy + b"\x00" + db_secret_material
+            b"arte-erp-session-compat\x00" + legacy + b"\x00" + db_secret_material
         ).digest()
 
     raise SessionConfigurationError("SESSION_SECRET não configurado.")
@@ -110,7 +106,6 @@ def session_from_request(request: Request) -> dict | None:
 
 
 def _canonical_ip(value: str) -> str:
-    """Return a canonical IP address or an empty string for invalid input."""
     candidate = str(value or "").strip()
     if not candidate:
         return ""
@@ -129,12 +124,10 @@ def _canonical_ip(value: str) -> str:
 
 
 def get_client_ip(request: Request) -> str:
-    """Resolve o IP do cliente a partir dos cabeçalhos do proxy e, por fim, do socket."""
     for header in ("x-real-ip", "cf-connecting-ip"):
         resolved = _canonical_ip(str(request.headers.get(header) or ""))
         if resolved:
             return resolved
-
     if request.client:
         resolved = _canonical_ip(str(request.client.host or ""))
         if resolved:
@@ -164,27 +157,12 @@ def role_authorized(request: Request, roles: frozenset[str] = ADMIN_ROLES) -> bo
 
 
 async def _active_membership(user_id: str) -> dict | None:
-    if not user_id or not database_url():
+    if not user_id or not database_configured():
         raise MembershipLookupError("Banco de autorização indisponível.")
     try:
-        async with connection() as conn:
-            async with conn.cursor() as cur:
-                await cur.execute(
-                    """
-                    SELECT role::text, COALESCE(display_name,''), organization_id::text
-                    FROM public.organization_members
-                    WHERE user_id=%s::uuid AND active=true
-                    ORDER BY created_at
-                    LIMIT 1
-                    """,
-                    (user_id,),
-                )
-                row = await cur.fetchone()
+        return await get_active_membership(user_id)
     except Exception as exc:
         raise MembershipLookupError("Falha ao consultar autorização.") from exc
-    if not row:
-        return None
-    return {"role": str(row[0]), "displayName": str(row[1]), "organizationId": str(row[2])}
 
 
 def login_page(next_path: str = "/") -> HTMLResponse:
@@ -230,10 +208,12 @@ document.getElementById("login").addEventListener("submit", async (event) => {{
     }});
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || "Não foi possível entrar.");
-    location.replace({json.dumps(safe_next)});
+    location.replace("/");
   }} catch (reason) {{ error.textContent = reason.message || "Falha de autenticação."; }}
 }});
 </script></body></html>"""
+    # Preserve validated relative next path without interpolating untrusted HTML/JS.
+    page = page.replace("location.replace(\"/\");", f"location.replace({json.dumps(safe_next)});")
     return HTMLResponse(
         page,
         headers={
@@ -263,10 +243,15 @@ async def api_login(request: Request):
         body = json.loads(raw.decode("utf-8")) if raw else {}
     except Exception:
         return JSONResponse({"ok": False, "error": "Requisição inválida."}, status_code=400)
+
     email = str(body.get("email") or "").strip().lower()[:254]
     password = str(body.get("password") or "")
     if not email or not password:
         return JSONResponse({"ok": False, "error": "E-mail ou senha inválidos."}, status_code=401)
+    if not database_configured():
+        return JSONResponse({"ok": False, "error": "Banco Neon ainda não configurado."}, status_code=503)
+    if not session_configuration_ready():
+        return JSONResponse({"ok": False, "error": "Segredo de sessão não configurado."}, status_code=503)
 
     client_ip = get_client_ip(request)
     account_allowed = await consume_rate_limit(
@@ -290,45 +275,24 @@ async def api_login(request: Request):
             headers={"Retry-After": "900", "Cache-Control": "no-store"},
         )
 
-    url, key = supabase_url(), publishable_key()
-    if not url or not key:
-        return JSONResponse({"ok": False, "error": "Autenticação ainda não configurada."}, status_code=503)
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
-            auth_response = await client.post(
-                f"{url}/auth/v1/token?grant_type=password",
-                headers={"apikey": key, "Content-Type": "application/json"},
-                json={"email": email, "password": password},
-            )
+        account = await authenticate_user(email, password)
     except Exception:
         return JSONResponse({"ok": False, "error": "Serviço de autenticação indisponível."}, status_code=503)
-    if auth_response.status_code != 200:
+    if not account:
         return JSONResponse({"ok": False, "error": "E-mail ou senha inválidos."}, status_code=401)
-
-    try:
-        user = (auth_response.json() or {}).get("user") or {}
-        user_id = str(user.get("id") or "")
-    except Exception:
-        user_id = ""
-    if not user_id:
-        return JSONResponse({"ok": False, "error": "Resposta de autenticação inválida."}, status_code=503)
-
-    try:
-        membership = await _active_membership(user_id)
-    except MembershipLookupError:
-        return JSONResponse({"ok": False, "error": "Serviço de autorização indisponível."}, status_code=503)
-    if not membership or membership["role"] not in TEACHER_ROLES:
+    if account["role"] not in TEACHER_ROLES:
         return JSONResponse({"ok": False, "error": "Usuário sem acesso ativo ao ERP."}, status_code=403)
 
     try:
-        token = create_session(user_id, membership["role"], membership["displayName"])
+        token = create_session(account["userId"], account["role"], account["displayName"])
     except SessionConfigurationError:
         return JSONResponse({"ok": False, "error": "Segredo de sessão não configurado."}, status_code=503)
     except Exception:
         return JSONResponse({"ok": False, "error": "Falha ao criar sessão."}, status_code=500)
 
     response = JSONResponse(
-        {"ok": True, "role": membership["role"], "name": membership["displayName"]},
+        {"ok": True, "role": account["role"], "name": account["displayName"]},
         headers={"Cache-Control": "no-store"},
     )
     response.set_cookie(

@@ -11,11 +11,9 @@ _pool: AsyncConnectionPool | None = None
 
 
 def connection_kwargs() -> dict:
-    # Supabase's serverless/transaction pooler can hand successive transactions to
-    # different PostgreSQL backends. Client-side prepared statements are therefore
-    # unsafe and may fail with "prepared statement ... already exists". Disabling
-    # automatic prepare keeps each FastAPI request compatible with PgBouncer while
-    # preserving parameterized SQL and server-side escaping.
+    # Neon can use pooled/serverless connections. Disabling automatic prepared
+    # statements avoids cross-backend prepared-statement collisions while keeping
+    # every query parameterized.
     return {"autocommit": True, "prepare_threshold": None}
 
 
@@ -47,7 +45,7 @@ async def close_pool() -> None:
 async def pool() -> AsyncConnectionPool:
     value = await open_pool()
     if value is None:
-        raise RuntimeError("Supabase não configurado. Informe uma URL PostgreSQL.")
+        raise RuntimeError("Banco PostgreSQL não configurado. Informe DATABASE_URL.")
     return value
 
 
