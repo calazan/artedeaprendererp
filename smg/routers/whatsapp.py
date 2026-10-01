@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from ..auth import OWNER_ADMIN_ROLES, require_role
 from ..audit import record_audit
 from ..config import whatsapp_provider_config
-from ..security import safe_equal, sync_authorized
+from ..security import bearer_secret_authorized, safe_equal, sync_authorized
 from ..utils import as_dict, iso_now
 from ..whatsapp import (
     claim_message,
@@ -72,12 +72,7 @@ def parse_body(raw: bytes) -> dict:
 
 
 def cron_authorized(request: Request) -> bool:
-    expected = str(os.getenv("CRON_SECRET", "")).strip()
-    received = str(request.headers.get("authorization") or "")
-    if received.lower().startswith("bearer "):
-        received = received[7:]
-    received = received.strip()
-    return len(expected) >= 32 and len(received) >= 32 and safe_equal(expected, received)
+    return bearer_secret_authorized(request)
 
 
 async def dispatch_reminders():

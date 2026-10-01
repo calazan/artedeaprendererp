@@ -49,8 +49,6 @@ Depois do primeiro usuário, acesse `/login` e entre com o e-mail e a senha cria
 - `/api/neon-health`: diagnóstico detalhado para usuário autenticado.
 - `/api/integrity`: integridade do banco para administradores.
 
-As antigas rotas com “supabase” no nome permanecem somente como aliases de compatibilidade com versões anteriores do frontend; elas usam o mesmo Neon/PostgreSQL e não acessam Supabase Auth.
-
 
 ## Política de dados locais
 
@@ -85,3 +83,10 @@ Registros legados em texto simples devem ser migrados, depois de configurar a me
 `PYTHONPATH=. python scripts/migrate_preregistration_encryption.py`
 
 Pré-cadastros rejeitados são excluídos após `PREREG_REJECTED_RETENTION_DAYS` (30 dias por padrão), e buckets de rate limit expirados são limpos pela rotina de retenção.
+
+
+## Rotas e autenticação legadas
+
+As rotas de runtime com nome `supabase` e a autenticação por `REMOTE_SYNC_KEY` foram removidas. Frontend e backend usam somente as rotas Neon/PostgreSQL atuais e a sessão HttpOnly validada contra o vínculo ativo no banco.
+
+O disparo de lembretes do WhatsApp usa exclusivamente `CRON_SECRET` no cabeçalho `Authorization: Bearer <segredo>`. Nenhum token de cron é lido de `smg_meta`.

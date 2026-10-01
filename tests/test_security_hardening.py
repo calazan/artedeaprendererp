@@ -24,7 +24,7 @@ def test_authentication_rate_limits_are_fail_closed_and_split_by_account_and_ip(
 
 def test_public_preregistration_uses_canonical_ip_and_fail_closed_rate_limit():
     source = (ROOT / "smg" / "routers" / "preregistration.py").read_text(encoding="utf-8")
-    assert "from ..auth import get_client_ip" in source
+    assert "from ..auth import" in source and "get_client_ip" in source
     assert "return get_client_ip(request)" in source
     assert 'namespace="pre-registration-public"' in source
     assert "fail_open=False" in source

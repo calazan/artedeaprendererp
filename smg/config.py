@@ -80,12 +80,6 @@ def database_provider(raw: str = "") -> str:
     return "postgresql"
 
 
-def remote_sync_key() -> str:
-    # Compatibilidade para integrações internas legadas. Não é requisito para
-    # considerar o Neon conectado e nunca deve ser enviado ao navegador.
-    return str(os.getenv("REMOTE_SYNC_KEY", "")).strip()
-
-
 def session_secret() -> str:
     return str(os.getenv("SESSION_SECRET", "")).strip()
 
@@ -108,7 +102,6 @@ def environment_status() -> dict:
         "postgresNonPooling": _truthy_env("POSTGRES_URL_NON_POOLING"),
         "databaseConfigured": database_configured(),
         "databaseProvider": database_provider(),
-        "remoteSyncKeyConfigured": bool(remote_sync_key()),
         "sessionSecretConfigured": bool(secret),
         "sessionSecretStrong": len(secret.encode("utf-8")) >= 32 if secret else False,
         "externalFrontend": False,

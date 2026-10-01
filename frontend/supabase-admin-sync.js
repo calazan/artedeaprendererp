@@ -447,7 +447,6 @@
       }),
     };
     window.__saberMaisNeon = publicSyncApi;
-    window.__saberMaisSupabase = publicSyncApi; // alias temporário até a etapa de remoção de legados
     window.__arteDeAprenderSync = publicSyncApi;
 
     window.setTimeout(initialize, 250);

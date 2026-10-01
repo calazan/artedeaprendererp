@@ -6,7 +6,7 @@ from typing import Any
 
 from psycopg.types.json import Jsonb
 
-from .config import database_url, remote_sync_key
+from .config import database_url, session_secret
 from .crypto import (
     decrypt_preregistration_data,
     encrypt_preregistration_data,
@@ -218,8 +218,11 @@ async def consume_rate_limit(
         if not database_url():
             return fail_open
         await ensure_schema()
+        secret = session_secret()
+        if len(secret.encode("utf-8")) < 32:
+            return fail_open
         digest = hashlib.sha256(
-            (remote_sync_key() + ":" + namespace + ":" + str(identifier or "unknown")).encode("utf-8")
+            (secret + ":" + namespace + ":" + str(identifier or "unknown")).encode("utf-8")
         ).hexdigest()
         async with connection() as conn:
             async with conn.cursor() as cur:

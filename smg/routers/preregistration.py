@@ -11,7 +11,7 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from ..audit import record_audit
-from ..auth import get_client_ip
+from ..auth import ADMIN_ROLES, get_client_ip, require_role
 from ..crypto import DataEncryptionConfigurationError, encryption_configured
 from ..preregistration import (
     configured,
@@ -23,7 +23,6 @@ from ..preregistration import (
     list_records,
     update_record,
 )
-from ..security import legacy_internal_authorized
 
 logger = logging.getLogger("smg.routers.preregistration")
 INTERNAL_ERROR_MESSAGE = "Ocorreu um erro interno ao processar a solicitação. Tente novamente mais tarde."
@@ -302,7 +301,7 @@ async def preregistration_api(request: Request):
                 pass
             return response({"ok": True, "protocol": record["protocol"], "status": record["status"]}, 201)
 
-        if not await legacy_internal_authorized(request):
+        if not await require_role(request, ADMIN_ROLES):
             return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
 
         if request.method == "GET":

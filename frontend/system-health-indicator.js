@@ -107,7 +107,7 @@
   }
 
   function updateSync() {
-    const api = window.__arteDeAprenderSync || window.__saberMaisSupabase;
+    const api = window.__arteDeAprenderSync;
     if (!api?.status) {
       setPill("#syncHealthPill", "#syncHealthText", "working", "Conectando banco", "A sincronização está sendo inicializada.");
       return;

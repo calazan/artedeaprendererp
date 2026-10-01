@@ -41,7 +41,7 @@ def request_with_body(body: bytes, path: str = "/api/database-sync") -> Request:
 def test_sync_body_over_safe_function_limit_returns_413(monkeypatch):
     monkeypatch.setattr(sync_router, "database_configured", lambda: True)
     request = request_with_body(b"x" * (sync_router.MAX_FUNCTION_BODY_BYTES + 1))
-    response = asyncio.run(sync_router.direct_supabase_sync(request))
+    response = asyncio.run(sync_router.direct_database_sync(request))
     assert response.status_code == 413
     assert b"PAYLOAD_TOO_LARGE" in response.body
 
@@ -71,7 +71,7 @@ def test_atomic_conflict_is_exposed_as_409(monkeypatch):
     monkeypatch.setattr(sync_router, "sync_critical_state", conflict)
 
     body = json.dumps({"state": {"students": []}, "baseRevision": 7}).encode()
-    response = asyncio.run(sync_router.direct_supabase_sync(request_with_body(body)))
+    response = asyncio.run(sync_router.direct_database_sync(request_with_body(body)))
     assert response.status_code == 409
     assert b"REMOTE_CONFLICT" in response.body
 
@@ -96,7 +96,7 @@ def test_invalid_state_value_returns_400(monkeypatch):
     monkeypatch.setattr(sync_router, "sync_critical_state", invalid)
 
     body = json.dumps({"state": {"payments": [{"id": "p1", "amount": "abc"}]}, "baseRevision": 2}).encode()
-    response = asyncio.run(sync_router.direct_supabase_sync(request_with_body(body)))
+    response = asyncio.run(sync_router.direct_database_sync(request_with_body(body)))
     assert response.status_code == 400
     assert b"payments.amount" in response.body
 

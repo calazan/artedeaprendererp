@@ -7,9 +7,8 @@ from fastapi.responses import JSONResponse
 
 from .. import APP_VERSION
 from ..auth import TEACHER_ROLES, role_authorized
-from ..auth_store import ensure_auth_schema
-from ..config import database_configured, database_provider, environment_status, remote_sync_key
-from ..state import database_counts, ensure_core_schema
+from ..config import database_configured, database_provider, environment_status
+from ..db import connection
 
 logger = logging.getLogger("smg.routers.health")
 INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
@@ -17,9 +16,8 @@ router = APIRouter()
 
 
 def payload(extra: dict, status: int = 200):
-    data = {"version": APP_VERSION, **extra}
     return JSONResponse(
-        data,
+        {"version": APP_VERSION, **extra},
         status_code=status,
         headers={
             "Cache-Control": "no-store",
@@ -29,65 +27,87 @@ def payload(extra: dict, status: int = 200):
     )
 
 
-def compatibility_payload() -> dict:
+async def database_ping() -> bool:
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT 1")
+            row = await cur.fetchone()
+    return bool(row and int(row[0]) == 1)
+
+
+async def detailed_database_status() -> dict:
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT
+                  to_regclass('public.smg_students') IS NOT NULL,
+                  to_regclass('public.smg_meta') IS NOT NULL,
+                  to_regclass('public.app_users') IS NOT NULL,
+                  to_regclass('public.organization_members') IS NOT NULL,
+                  to_regclass('public.smg_manual_backups') IS NOT NULL
+                """
+            )
+            schema = await cur.fetchone()
+            core_ready = bool(schema and schema[0] and schema[1])
+            auth_ready = bool(schema and schema[2] and schema[3])
+            backup_ready = bool(schema and schema[4])
+
+            counts = {}
+            if core_ready:
+                await cur.execute(
+                    """
+                    SELECT
+                      (SELECT count(*)::int FROM public.smg_students),
+                      (SELECT count(*)::int FROM public.smg_payments WHERE deleted_at IS NULL),
+                      (SELECT count(*)::int FROM public.smg_attendance)
+                    """
+                )
+                row = await cur.fetchone()
+                counts = {
+                    "students": int(row[0] or 0),
+                    "payments": int(row[1] or 0),
+                    "attendance": int(row[2] or 0),
+                }
     return {
-        "remoteSyncKeyConfigured": bool(remote_sync_key()),
-        "storage": {
-            "connected": database_configured(),
-            "provider": database_provider(),
-            "access": {"tested": False, "ok": database_configured()},
-        },
+        "schemaReady": core_ready,
+        "authSchemaReady": auth_ready,
+        "backupSchemaReady": backup_ready,
+        "counts": counts,
     }
-
-
-async def _health(*, detailed: bool = False):
-    if not database_configured():
-        return payload(
-            {
-                "ok": False,
-                "configured": False,
-                **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
-                "error": "DATABASE_URL do Neon/PostgreSQL ainda não está disponível no ambiente Production.",
-            },
-            503,
-        )
-    try:
-        await ensure_core_schema()
-        await ensure_auth_schema()
-        counts = await database_counts()
-        return payload(
-            {
-                "ok": True,
-                "configured": True,
-                "schemaReady": True,
-                "authSchemaReady": True,
-                "provider": database_provider(),
-                **({"counts": counts, "environment": environment_status(), **compatibility_payload()} if detailed else {}),
-            }
-        )
-    except Exception:
-        logger.exception("Erro interno inesperado no endpoint.")
-        return payload(
-            {
-                "ok": False,
-                "configured": database_configured(),
-                "schemaReady": False,
-                **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
-                "error": INTERNAL_ERROR_MESSAGE,
-            },
-            500,
-        )
 
 
 @router.get("/api/health")
 async def health():
-    return await _health(detailed=False)
+    if not database_configured():
+        return payload({"ok": False}, 503)
+    try:
+        return payload({"ok": await database_ping()})
+    except Exception:
+        logger.warning("Health check do banco falhou.", exc_info=True)
+        return payload({"ok": False}, 503)
 
 
 @router.get("/api/database-health")
 @router.get("/api/neon-health")
-@router.get("/api/supabase-health")
 async def database_health(request: Request):
     if not await role_authorized(request, TEACHER_ROLES):
         return payload({"ok": False, "error": "Autenticação obrigatória."}, 401)
-    return await _health(detailed=True)
+    if not database_configured():
+        return payload({"ok": False, "configured": False}, 503)
+    try:
+        if not await database_ping():
+            return payload({"ok": False, "configured": True}, 503)
+        detailed = await detailed_database_status()
+        return payload(
+            {
+                "ok": True,
+                "configured": True,
+                "provider": database_provider(),
+                "environment": environment_status(),
+                **detailed,
+            }
+        )
+    except Exception:
+        logger.exception("Erro no diagnóstico autenticado do banco.")
+        return payload({"ok": False, "configured": True, "error": INTERNAL_ERROR_MESSAGE}, 500)

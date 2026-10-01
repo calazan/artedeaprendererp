@@ -87,7 +87,3 @@ async def handler(request: Request):
 async def teacher_attendance(request: Request):
     return await handler(request)
 
-
-@router.api_route("/api/teacher-attendance-supabase", methods=["GET", "POST"])
-async def teacher_attendance_supabase(request: Request):
-    return await handler(request)

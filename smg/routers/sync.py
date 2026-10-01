@@ -361,8 +361,7 @@ async def compatibility_sync(request: Request):
 
 
 @router.api_route("/api/database-sync", methods=["GET", "POST"])
-@router.api_route("/api/supabase-sync", methods=["GET", "POST"])
-async def direct_supabase_sync(request: Request):
+async def direct_database_sync(request: Request):
     if not database_configured():
         return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
 
