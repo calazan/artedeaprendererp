@@ -43,11 +43,6 @@ async def ensure_audit_schema() -> None:
     global _schema_ready
     if _schema_ready:
         return
-    if request is not None:
-        safe_details.setdefault("ip", get_client_ip(request))
-        user_agent = str(request.headers.get("user-agent") or "").strip()
-        if user_agent:
-            safe_details.setdefault("userAgent", user_agent[:240])
     async with connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(AUDIT_SCHEMA_SQL)
@@ -71,6 +66,11 @@ async def record_audit(
         for key, value in as_dict(details).items()
         if key.lower() not in {"password", "token", "synckey", "authorization"}
     }
+    if request is not None:
+        safe_details.setdefault("ip", get_client_ip(request))
+        user_agent = str(request.headers.get("user-agent") or "").strip()
+        if user_agent:
+            safe_details.setdefault("userAgent", user_agent[:240])
     async with connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
