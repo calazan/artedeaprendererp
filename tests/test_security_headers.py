@@ -64,7 +64,7 @@ def test_sensitive_server_data_is_escaped_before_preregistration_html():
     for expression in (
         "escapeHTML(data.childName",
         "escapeHTML(data.guardianName",
-        "escapeHTML(data.guardianCpf",
+        "escapeHTML([data.guardianName, data.relationship, data.guardianCpf]",
         "escapeHTML(healthSummary)",
         "escapeHTML(data.routineDetails",
         "escapeHTML(peopleText(data.authorizedPeople))",

@@ -13,7 +13,9 @@ def test_index_loads_final_brand_and_visual_assets():
     assert 'visual-fixes.css?v=20261001' in html
     assert 'logo-horizontal.webp?v=20261001' in html
     assert 'banner-dashboard.webp?v=20261001' in html
-    assert './sw.js?v=20261001' in html
+    assert 'register-sw.js?v=1' in html
+    register_sw = (frontend_dir() / "register-sw.js").read_text(encoding="utf-8")
+    assert './sw.js?v=20261001-online1' in register_sw
 
 
 def test_visual_fix_restores_official_logo_and_teacher_link_contrast():
