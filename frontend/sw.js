@@ -1,9 +1,9 @@
-const CACHE_NAME = "arte-de-aprender-python-v69-menu-brand";
+const CACHE_NAME = "arte-de-aprender-visual-20261001";
 const PRECACHE = [
   "./",
   "./index.html",
-  "./styles.min.css?v=469-a3p3",
-  "./menu-brand.css?v=1",
+  "./styles.min.css?v=20261001",
+  "./menu-brand.css?v=20261001",
   "./pre-app-state-guard.js?v=1",
   "./python-auth-bridge.js?v=1",
   "./smg-confirm-dialog.js?v=1",
@@ -41,13 +41,16 @@ const PRECACHE = [
   "./dashboard-redesign.css?v=1",
   "./whatsapp-reminders.js?v=1",
   "./whatsapp-reminders.css?v=1",
-  "./dashboard-banner.svg?v=1",
   "./main-menu-colors.css?v=53",
-  "./manifest.json?v=2",
-  "./favicon-96.png?v=1",
-  "./app-icon-192.png?v=1",
-  "./2.webp?v=1",
-  "./menu-brand.png?v=1"
+  "./manifest.json?v=3",
+  "./logo-circular.webp?v=20261001",
+  "./app-icon-192.png?v=20261001",
+  "./banner-login.webp?v=20261001",
+  "./banner-dashboard.webp?v=20261001",
+  "./banner-precadastro.webp?v=20261001",
+  "./logo-circular.webp?v=20261001",
+  "./logo-horizontal.webp?v=20261001",
+  "./app-icon-192.png?v=20261001"
 ];
 
 self.addEventListener("install", (event) => {
@@ -81,8 +84,8 @@ self.addEventListener("push", (event) => {
   const title = payload.title || "Arte de Aprender ERP";
   const options = {
     body: payload.body || "Você tem uma tarefa agendada.",
-    icon: payload.icon || "/app-icon-192.png?v=1",
-    badge: payload.badge || "/favicon-96.png?v=1",
+    icon: payload.icon || "/app-icon-192.png?v=20261001",
+    badge: payload.badge || "/app-icon-192.png?v=20261001",
     tag: payload.tag || `smg-task-${Date.now()}`,
     renotify: payload.renotify === true,
     requireInteraction: payload.requireInteraction === true,

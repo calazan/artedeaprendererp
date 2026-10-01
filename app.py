@@ -93,15 +93,15 @@ def rendered_html(path: Path) -> HTMLResponse:
         text = text.replace("V4.6.9", f"V{APP_VERSION}")
         text = text.replace('data-app-version="4.6.9"', f'data-app-version="{APP_VERSION}"')
         text = text.replace(
-            '<link rel="stylesheet" href="menu-brand.css?v=1" />',
-            '<link rel="stylesheet" href="menu-brand.css?v=3" />\n'
-            '    <link rel="stylesheet" href="main-menu-colors.css?v=2" />\n'
-            '    <link rel="stylesheet" href="visual-fixes.css?v=1" />',
+            '<link rel="stylesheet" href="menu-brand.css?v=20261001" />',
+            '<link rel="stylesheet" href="menu-brand.css?v=20261001" />\n'
+            '    <link rel="stylesheet" href="main-menu-colors.css?v=20261001" />\n'
+            '    <link rel="stylesheet" href="visual-fixes.css?v=20261001" />',
         )
-        text = text.replace("menu-brand.png?v=1", "menu-brand.png?v=3")
+        text = text.replace("logo-horizontal.webp?v=20261001", "logo-horizontal.webp?v=20261001")
         text = text.replace("python-auth-bridge.js?v=1", "python-auth-bridge.js?v=2")
         text = text.replace("remote-sync-key-fix.js?v=6", "remote-sync-key-fix.js?v=7")
-        text = text.replace("./sw.js?v=69", "./sw.js?v=72")
+        text = text.replace("./sw.js?v=20261001", "./sw.js?v=20261001")
     return HTMLResponse(text, headers=response_headers(path))
 
 

@@ -197,7 +197,7 @@ def login_page(next_path: str = "/") -> HTMLResponse:
 *{{box-sizing:border-box}}
 body{{margin:0;min-height:100vh;display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 12% 15%,rgba(159,90,166,.23),transparent 29%),radial-gradient(circle at 88% 84%,rgba(245,189,53,.25),transparent 30%),linear-gradient(135deg,#fbf7ef,#f7f2fb);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;color:var(--ink)}}
 main{{width:min(470px,100%);background:rgba(255,255,255,.92);padding:24px 28px 28px;border:1px solid rgba(127,67,137,.12);border-radius:26px;box-shadow:0 24px 80px rgba(49,31,54,.16)}}
-.brand-panel{{display:grid;place-items:center;background:#fff;border:1px solid rgba(127,67,137,.10);border-radius:22px;padding:12px;margin-bottom:18px;overflow:hidden}}
+.brand-panel{{display:grid;place-items:center;background:#fff;border:1px solid rgba(118,0,138,.12);border-radius:22px;padding:12px;margin-bottom:18px;overflow:hidden}}
 .brand-panel img{{display:block;width:min(390px,100%);height:auto;max-height:250px;object-fit:contain}}
 .version{{width:max-content;max-width:100%;margin:0 auto 14px;padding:7px 12px;border-radius:999px;background:#f7eef9;color:var(--purple-dark);font-size:12px;font-weight:800;letter-spacing:.04em}}
 h1{{margin:0 0 7px;text-align:center;font-size:26px;color:var(--purple-dark)}}
@@ -211,7 +211,7 @@ button:hover{{filter:brightness(1.05)}}
 small{{display:block;color:#746b78;margin-top:15px;text-align:center;line-height:1.4}}
 @media(max-width:520px){{body{{padding:14px}}main{{padding:18px;border-radius:22px}}.brand-panel{{padding:8px}}.brand-panel img{{max-height:210px}}}}
 </style></head><body><main>
-<div class="brand-panel"><img src="/menu-brand.png?v=2" alt="Arte de Aprender" decoding="async"></div>
+<div class="brand-panel"><img src="/logo-horizontal.webp?v=20261001" alt="Arte de Aprender" decoding="async"></div>
 <div class="version">Arte de Aprender ERP • Versão {APP_VERSION}</div>
 <h1>Gestão Arte de Aprender</h1><p class="lead">Entre com sua conta autorizada.</p>
 <form id="login"><label for="email">E-mail</label><input id="email" type="email" autocomplete="username" required>

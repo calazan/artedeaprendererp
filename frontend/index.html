@@ -3,24 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Gestão Arte de Aprender V4.6.9</title>
-    <link rel="stylesheet" href="styles.min.css?v=469-a3p3" />
-    <link rel="stylesheet" href="menu-brand.css?v=1" />
-    <link rel="icon" type="image/png" href="favicon-96.png?v=1" />
+    <title>Arte de Aprender ERP V4.6.9</title>
+    <link rel="stylesheet" href="styles.min.css?v=20261001" />
+    <link rel="stylesheet" href="menu-brand.css?v=20261001" />
+    <link rel="icon" type="image/webp" href="logo-circular.webp?v=20261001" />
     <!-- V4.1.4 revisão visual aplicada -->
-    <link rel="manifest" href="manifest.json?v=2" />
-    <meta name="theme-color" content="#9f5aa6" />
+    <link rel="manifest" href="manifest.json?v=3" />
+    <meta name="theme-color" content="#76008a" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <meta name="apple-mobile-web-app-title" content="Arte de Aprender" />
-    <link rel="apple-touch-icon" href="app-icon-192.png?v=1" />
+    <link rel="apple-touch-icon" href="app-icon-192.png?v=20261001" />
   </head>
   <body data-app-version="4.6.9">
     <section class="login-screen is-hidden" id="loginScreen" aria-label="Tela de acesso">
       <div class="orb orb-purple"></div>
       <div class="orb orb-yellow"></div>
       <div class="login-card glass-card">
-        <img class="login-logo" src="2.webp?v=1" decoding="async" alt="Arte de Aprender" />
+        <img class="login-brand-banner" src="banner-login.webp?v=20261001" decoding="async" alt="Arte de Aprender" />
         <p class="eyebrow">Sistema interno</p>
         <h1>Gestão Arte de Aprender</h1>
         <form id="loginForm" class="login-form">
@@ -41,10 +41,10 @@
     <div class="app-shell" id="appShell">
       <aside class="sidebar glass-card">
         <div class="brand">
-          <img class="brand-logo brand-logo-icon brand-menu-image" src="menu-brand.png?v=1" decoding="async" alt="Arte de Aprender" />
-          <div>
-            <strong>Gestão Arte de Aprender</strong>
-            <span>Contraturno infantil</span>
+          <img class="brand-logo brand-menu-image" src="logo-horizontal.webp?v=20261001" decoding="async" alt="Arte de Aprender" />
+          <div class="brand-copy">
+            <strong>ERP</strong>
+            <span>Gestão do contraturno</span>
           </div>
         </div>
 
@@ -83,6 +83,9 @@
         </header>
 
         <section class="view is-active" id="dashboardView">
+          <section class="brand-hero-banner glass-card" aria-label="Identidade Arte de Aprender">
+            <img src="banner-dashboard.webp?v=20261001" decoding="async" alt="Arte de Aprender" />
+          </section>
           <div class="metric-grid">
             <article class="metric glass-card">
               <span>Crianças ativas</span>
@@ -178,11 +181,11 @@
               </label>
               <label>
                 Telefone
-                <input id="guardianPhone" placeholder="(44) 99999-9999" />
+                <input id="guardianPhone" placeholder="(00) 99999-9999" />
               </label>
               <label>
                 Telefone de emergência
-                <input id="emergencyPhone" placeholder="(44) 99999-9999" />
+                <input id="emergencyPhone" placeholder="(00) 99999-9999" />
               </label>
               <label class="wide-field">
                 Endereço
@@ -491,7 +494,7 @@
                 </label>
                 <label>
                   Telefone
-                  <input id="participantPhone" placeholder="(44) 99999-9999" />
+                  <input id="participantPhone" placeholder="(00) 99999-9999" />
                 </label>
                 <label class="span-2">
                   Endereço
@@ -1634,7 +1637,7 @@
     <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
-          navigator.serviceWorker.register("./sw.js?v=69").catch((error) => {
+          navigator.serviceWorker.register("./sw.js?v=20261001").catch((error) => {
             console.warn("Service Worker não registrado:", error);
           });
         });
