@@ -293,7 +293,7 @@
             <label class="employee-upload-file">Arquivo PDF ou imagem<input id="employeeDocumentFile" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" required /></label>
             <button type="submit">Enviar documento</button>
           </form>
-          <p class="employee-danger-note" style="margin-top:12px">Arquivos de funcionários são privados e exigem a chave interna do Arte de Aprender para serem enviados ou abertos. Limite de 6 MB por arquivo.</p>
+          <p class="employee-danger-note" style="margin-top:12px">Arquivos de funcionários são privados e exigem a chave interna do Arte de Aprender para serem enviados ou abertos. Limite de 3 MB por arquivo.</p>
         </section>
         <section class="panel glass-card finance-section-gap"><div class="panel-head stackable"><div><h2>Arquivos armazenados</h2><span id="employeeDocumentInfo">Carregando...</span></div><label>Filtrar funcionário<select id="documentFilterEmployee"></select></label></div><div id="employeeDocumentList"></div></section>
       </div>
@@ -809,7 +809,7 @@
 
   async function uploadDocument({ employeeId, kind, period, relatedId = "", file }) {
     if (!file) return;
-    if (file.size > 6 * 1024 * 1024) return showToast("O arquivo deve ter no máximo 6 MB.");
+    if (file.size > 3_000_000) return showToast("O arquivo deve ter no máximo 3 MB.");
     try {
       showToast("Enviando documento...");
       const dataBase64 = await fileToBase64(file);
