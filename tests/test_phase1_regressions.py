@@ -104,7 +104,8 @@ def test_schema_ensure_functions_work_without_and_with_supabase_roles(monkeypatc
                 (list(TARGET_TABLES),),
                 fetch=True,
             )
-            assert len(tables) == len(TARGET_TABLES)\n            assert all(row[0] for row in tables)
+            assert len(tables) == len(TARGET_TABLES)
+            assert all(row[0] for row in tables)
 
             # Agora cria os papéis, concede SELECT e confirma que os ensure_* realmente revogam.
             await admin_execute(url, "CREATE ROLE anon NOLOGIN")
