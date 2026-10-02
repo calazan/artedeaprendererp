@@ -189,7 +189,7 @@ global.fetch = async (url, options = {}) => {
       },
     };
   }
-  if (url === "/api/supabase-sync" && options.method === "POST") {
+  if (url.startsWith("/api/supabase-sync") && options.method === "POST") {
     syncPosts += 1;
     if (syncPosts === 1) {
       return {
@@ -237,7 +237,7 @@ vm.runInThisContext(source, { filename: process.argv[1] });
   assert.strictEqual(syncPosts, 2, "a pendência deve ser reenviada uma vez após o 409");
 
   const posts = calls.filter(
-    (call) => call.url === "/api/supabase-sync" && call.options.method === "POST",
+    (call) => call.url.startsWith("/api/supabase-sync") && call.options.method === "POST",
   );
   const first = JSON.parse(posts[0].options.body);
   const retry = JSON.parse(posts[1].options.body);
@@ -423,7 +423,7 @@ global.fetch = async (url, options = {}) => {
       async json() { return { ok: true, revision: 5, data: remote, tombstones: {} }; },
     };
   }
-  if (url === "/api/supabase-sync" && options.method === "POST") {
+  if (url.startsWith("/api/supabase-sync") && options.method === "POST") {
     return {
       ok: true,
       status: 200,
@@ -454,7 +454,7 @@ vm.runInThisContext(source, { filename: process.argv[1] });
   }
 
   const post = calls.find(
-    (call) => call.url === "/api/supabase-sync" && call.options.method === "POST",
+    (call) => call.url.startsWith("/api/supabase-sync") && call.options.method === "POST",
   );
   assert.ok(post, "a pendência migrada precisa ser enviada");
   const payload = JSON.parse(post.options.body);
