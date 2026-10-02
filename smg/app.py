@@ -67,7 +67,7 @@ async def security_headers(request, call_next):
     response.headers["X-Frame-Options"] = "DENY"
     report_only = str(os.getenv("CSP_REPORT_ONLY", "")).strip().lower() in {"1", "true", "yes"}
     header = "Content-Security-Policy-Report-Only" if report_only else "Content-Security-Policy"
-    response.headers[header] = SECURITY_CSP
+    response.headers.setdefault(header, SECURITY_CSP)
     return response
 
 for router in (

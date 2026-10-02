@@ -1,10 +1,13 @@
 from pathlib import Path
+import asyncio
 import re
 
 from fastapi.testclient import TestClient
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app import app
-from smg.app import SECURITY_CSP
+from smg.app import SECURITY_CSP, security_headers
 from smg.auth import login_page
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,3 +73,26 @@ def test_sensitive_server_data_is_escaped_before_preregistration_html():
         "escapeHTML(peopleText(data.authorizedPeople))",
     ):
         assert expression in source
+
+
+def test_route_specific_blocking_csp_is_preserved(monkeypatch):
+    monkeypatch.delenv("CSP_REPORT_ONLY", raising=False)
+    request = Request({
+        "type": "http",
+        "http_version": "1.1",
+        "method": "GET",
+        "scheme": "https",
+        "path": "/document",
+        "raw_path": b"/document",
+        "query_string": b"",
+        "headers": [],
+        "server": ("erp.example", 443),
+        "client": ("127.0.0.1", 1234),
+    })
+
+    async def call_next(_request):
+        return Response(b"document", headers={"Content-Security-Policy": "sandbox"})
+
+    response = asyncio.run(security_headers(request, call_next))
+    assert response.headers["content-security-policy"] == "sandbox"
+    assert response.headers["strict-transport-security"] == "max-age=31536000; includeSubDomains"
