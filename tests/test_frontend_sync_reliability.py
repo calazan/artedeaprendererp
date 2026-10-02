@@ -297,3 +297,185 @@ def test_local_persistence_calls_remote_flush_after_local_flush():
     assert "window.__saberMaisSupabase?.flushBeforeUnload?.()" in source
     assert 'document.visibilityState === "hidden"' in source
     assert 'window.addEventListener("pagehide", flushPendingSave)' in source
+
+
+def test_migration_without_base_state_preserves_cloud_only_records():
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node.js não disponível para o teste de migração do frontend.")
+
+    script = r"""
+const fs = require("fs");
+const vm = require("vm");
+const assert = require("assert");
+
+class MemoryStorage {
+  constructor() { this.data = new Map(); }
+  getItem(key) { return this.data.has(String(key)) ? this.data.get(String(key)) : null; }
+  setItem(key, value) { this.data.set(String(key), String(value)); }
+  removeItem(key) { this.data.delete(String(key)); }
+}
+
+const localStorage = new MemoryStorage();
+global.localStorage = localStorage;
+global.window = global;
+global.globalThis = global;
+window.__saberStabilityCoreLoaded = true;
+
+global.document = {
+  hidden: false,
+  visibilityState: "visible",
+  body: { appendChild() {} },
+  querySelector() { return null; },
+  createElement() {
+    return {
+      dataset: {},
+      addEventListener() {},
+      set src(value) { this._src = value; },
+    };
+  },
+  addEventListener() {},
+};
+window.addEventListener = () => {};
+
+global.setTimeout = (callback, delay) => {
+  if (delay === 250) Promise.resolve().then(callback);
+  return 1;
+};
+window.setTimeout = global.setTimeout;
+global.clearTimeout = () => {};
+global.setInterval = () => 1;
+global.clearInterval = () => {};
+
+global.state = {
+  students: [{ id: "s1", name: "Ana", phone: "222", guardian: "Maria" }],
+  activityCatalog: [],
+  extraEvents: [],
+  extraParticipants: [],
+  attendance: {},
+  payments: [],
+  otherIncomes: [],
+  expenses: [],
+  proposals: [],
+  expenseCategories: [],
+  agendaEvents: [],
+  bankAccounts: [],
+  bankMovements: [],
+  paymentExclusions: [],
+  rentalManagement: {},
+  settings: {
+    remoteSync: { syncKey: "12345678901234567890123456789012" },
+  },
+};
+global.saveState = () => {};
+global.flushSaveState = () => {};
+global.normalizeState = (value) => value;
+global.renderAll = () => {};
+global.showToast = () => {};
+
+localStorage.setItem("arteDeAprenderERP.supabase.pendingPush.v1", JSON.stringify({
+  pending: true,
+  revision: 3,
+  updatedAt: "2026-10-02T11:00:00Z",
+}));
+
+const remote = {
+  students: [
+    { id: "s1", name: "Ana", phone: "111", guardian: "João", updatedAt: "2026-10-02T10:00:00Z" },
+    { id: "s2", name: "Somente nuvem", updatedAt: "2026-10-02T10:05:00Z" },
+  ],
+  activityCatalog: [],
+  extraEvents: [],
+  extraParticipants: [],
+  attendance: {},
+  payments: [],
+  otherIncomes: [],
+  expenses: [],
+  proposals: [],
+  expenseCategories: [],
+  agendaEvents: [],
+  bankAccounts: [],
+  bankMovements: [],
+  paymentExclusions: [],
+  rentalManagement: {},
+  settings: {},
+};
+
+const canonical = JSON.parse(JSON.stringify(remote));
+canonical.students[0].phone = "222";
+canonical.students[0].guardian = "Maria";
+canonical.students[0].updatedAt = "2026-10-02T11:01:00Z";
+
+const calls = [];
+global.fetch = async (url, options = {}) => {
+  calls.push({ url, options });
+  if (url === "/api/supabase-health") {
+    return {
+      ok: true,
+      status: 200,
+      async json() { return { schemaReady: true, counts: { students: 2 } }; },
+    };
+  }
+  if (url === "/api/supabase-sync" && (options.method || "GET") === "GET") {
+    return {
+      ok: true,
+      status: 200,
+      async json() { return { ok: true, revision: 5, data: remote, tombstones: {} }; },
+    };
+  }
+  if (url === "/api/supabase-sync" && options.method === "POST") {
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          ok: true,
+          revision: 6,
+          updatedAt: "2026-10-02T11:01:00Z",
+          data: canonical,
+          tombstones: {},
+        };
+      },
+    };
+  }
+  throw new Error("Requisição inesperada: " + url);
+};
+
+const source = fs.readFileSync(process.argv[1], "utf8");
+vm.runInThisContext(source, { filename: process.argv[1] });
+
+(async () => {
+  for (let i = 0; i < 40; i += 1) {
+    await new Promise((resolve) => setImmediate(resolve));
+    if (!window.__saberMaisSupabase.status().busy) {
+      const posts = calls.filter((call) => call.options.method === "POST");
+      if (posts.length) break;
+    }
+  }
+
+  const post = calls.find(
+    (call) => call.url === "/api/supabase-sync" && call.options.method === "POST",
+  );
+  assert.ok(post, "a pendência migrada precisa ser enviada");
+  const payload = JSON.parse(post.options.body);
+  assert.strictEqual(payload.protocolVersion, 2);
+  assert.strictEqual(payload.baseRevision, 5);
+  const tombstones = payload.changes.students?.tombstones || [];
+  assert.ok(
+    !tombstones.some((item) => item.id === "s2"),
+    "registro existente apenas na nuvem não pode ser interpretado como exclusão local",
+  );
+  assert.ok(state.students.some((item) => item.id === "s2"));
+})().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+"""
+    result = subprocess.run(
+        [node, "-e", script, str(SYNC_SOURCE)],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
