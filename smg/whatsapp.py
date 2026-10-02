@@ -4,7 +4,7 @@ import hashlib
 import hmac
 import json
 from calendar import monthrange
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -18,6 +18,9 @@ from .state import ensure_core_schema
 from .utils import as_dict, as_list, iso_now, iso_value
 
 _schema_ready = False
+
+WHATSAPP_RETRY_AFTER = timedelta(minutes=10)
+WHATSAPP_MAX_ATTEMPTS = 3
 
 WHATSAPP_SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS public.smg_whatsapp_recipients (
@@ -41,6 +44,7 @@ CREATE TABLE IF NOT EXISTS public.smg_whatsapp_message_log (
   meta_message_id text NOT NULL DEFAULT '',
   status text NOT NULL DEFAULT 'claimed',
   error text NOT NULL DEFAULT '',
+  attempt_count integer NOT NULL DEFAULT 0,
   sent_at timestamptz,
   delivered_at timestamptz,
   read_at timestamptz,
@@ -52,6 +56,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS smg_whatsapp_message_meta_id_idx
   WHERE meta_message_id <> '';
 CREATE INDEX IF NOT EXISTS smg_whatsapp_message_log_created_idx
   ON public.smg_whatsapp_message_log(created_at DESC);
+ALTER TABLE public.smg_whatsapp_message_log
+  ADD COLUMN IF NOT EXISTS attempt_count integer NOT NULL DEFAULT 0;
+UPDATE public.smg_whatsapp_message_log
+SET attempt_count=1
+WHERE attempt_count=0;
 
 ALTER TABLE public.smg_whatsapp_message_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.smg_whatsapp_recipients ENABLE ROW LEVEL SECURITY;
@@ -335,15 +344,25 @@ def reminder_key(payment_id: str = "", offset_days: int = 0, phone: str = "") ->
 
 async def claim_message(entry: dict) -> bool:
     await ensure_schema()
+    retry_seconds = int(WHATSAPP_RETRY_AFTER.total_seconds())
     async with connection() as conn:
         async with conn.cursor() as cur:
             await cur.execute(
                 """
                 INSERT INTO public.smg_whatsapp_message_log
                   (notification_key,payment_id,student_id,offset_days,recipient_last4,
-                   guardian_name,student_name,amount,due_date,status,created_at,updated_at)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::date,'claimed',now(),now())
-                ON CONFLICT (notification_key) DO NOTHING
+                   guardian_name,student_name,amount,due_date,status,error,attempt_count,
+                   created_at,updated_at)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::date,'claimed','',1,now(),now())
+                ON CONFLICT (notification_key) DO UPDATE SET
+                  status='claimed',
+                  error='',
+                  attempt_count=public.smg_whatsapp_message_log.attempt_count+1,
+                  updated_at=now()
+                WHERE public.smg_whatsapp_message_log.status IN ('failed','claimed')
+                  AND public.smg_whatsapp_message_log.attempt_count < %s
+                  AND public.smg_whatsapp_message_log.updated_at
+                      <= now() - (%s * interval '1 second')
                 RETURNING notification_key
                 """,
                 (
@@ -356,6 +375,8 @@ async def claim_message(entry: dict) -> bool:
                     str(entry.get("studentName") or "")[:160],
                     Decimal(str(entry.get("amount") or 0)),
                     entry.get("dueDate") or None,
+                    WHATSAPP_MAX_ATTEMPTS,
+                    retry_seconds,
                 ),
             )
             return (await cur.fetchone()) is not None
@@ -431,7 +452,7 @@ async def list_history(limit: int = 50) -> list[dict]:
                 """
                 SELECT notification_key,payment_id,student_id,offset_days,recipient_last4,
                        guardian_name,student_name,amount,due_date::text,meta_message_id,
-                       status,error,sent_at,delivered_at,read_at,created_at,updated_at
+                       status,error,attempt_count,sent_at,delivered_at,read_at,created_at,updated_at
                 FROM public.smg_whatsapp_message_log
                 ORDER BY created_at DESC
                 LIMIT %s
@@ -454,11 +475,12 @@ async def list_history(limit: int = 50) -> list[dict]:
             "messageId": str(r[9] or ""),
             "status": str(r[10] or ""),
             "error": str(r[11] or ""),
-            "sentAt": iso_value(r[12]),
-            "deliveredAt": iso_value(r[13]),
-            "readAt": iso_value(r[14]),
-            "createdAt": iso_value(r[15]),
-            "updatedAt": iso_value(r[16]),
+            "attemptCount": int(r[12] or 0),
+            "sentAt": iso_value(r[13]),
+            "deliveredAt": iso_value(r[14]),
+            "readAt": iso_value(r[15]),
+            "createdAt": iso_value(r[16]),
+            "updatedAt": iso_value(r[17]),
         }
         for r in rows
     ]

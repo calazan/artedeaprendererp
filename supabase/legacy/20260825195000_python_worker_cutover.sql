@@ -1,3 +1,7 @@
+-- LEGACY: arquivo histórico do período Supabase/pg_net.
+-- NÃO executar no Neon/PostgreSQL atual. Os agendamentos vigentes são feitos
+-- por Vercel Cron Jobs (ou scheduler HTTP externo) com CRON_SECRET.
+--
 -- Arte de Aprender ERP 4.8.0 — remove dependência operacional das Edge Functions legadas.
 -- Mantém os jobs e tokens existentes para permitir rollback, mas os disparos passam
 -- a chamar exclusivamente o backend FastAPI deste repositório.
