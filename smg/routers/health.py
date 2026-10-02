@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from time import monotonic
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -14,6 +15,8 @@ from ..state import database_counts, ensure_core_schema
 logger = logging.getLogger("smg.routers.health")
 INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
 router = APIRouter()
+PUBLIC_HEALTH_CACHE_SECONDS = 15.0
+_public_health_cache: dict | None = None
 
 
 def payload(extra: dict, status: int = 200):
@@ -41,42 +44,74 @@ def compatibility_payload() -> dict:
 
 
 async def _health(*, detailed: bool = False):
+    global _public_health_cache
+
+    if not detailed and _public_health_cache:
+        if monotonic() < float(_public_health_cache.get("expiresAt") or 0):
+            return payload(
+                dict(_public_health_cache.get("data") or {}),
+                int(_public_health_cache.get("status") or 200),
+            )
+        _public_health_cache = None
+
     if not database_configured():
-        return payload(
-            {
-                "ok": False,
-                "configured": False,
-                **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
-                "error": "DATABASE_URL do Neon/PostgreSQL ainda não está disponível no ambiente Production.",
-            },
-            503,
-        )
+        data = {
+            "ok": False,
+            "configured": False,
+            **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
+            "error": "DATABASE_URL do Neon/PostgreSQL ainda não está disponível no ambiente Production.",
+        }
+        if not detailed:
+            _public_health_cache = {
+                "expiresAt": monotonic() + PUBLIC_HEALTH_CACHE_SECONDS,
+                "data": data,
+                "status": 503,
+            }
+        return payload(data, 503)
+
     try:
         await ensure_core_schema()
         await ensure_auth_schema()
-        counts = await database_counts()
-        return payload(
-            {
-                "ok": True,
-                "configured": True,
-                "schemaReady": True,
-                "authSchemaReady": True,
-                "provider": database_provider(),
-                **({"counts": counts, "environment": environment_status(), **compatibility_payload()} if detailed else {}),
+        counts = await database_counts() if detailed else None
+        data = {
+            "ok": True,
+            "configured": True,
+            "schemaReady": True,
+            "authSchemaReady": True,
+            "provider": database_provider(),
+            **(
+                {
+                    "counts": counts,
+                    "environment": environment_status(),
+                    **compatibility_payload(),
+                }
+                if detailed
+                else {}
+            ),
+        }
+        if not detailed:
+            _public_health_cache = {
+                "expiresAt": monotonic() + PUBLIC_HEALTH_CACHE_SECONDS,
+                "data": data,
+                "status": 200,
             }
-        )
+        return payload(data)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
-        return payload(
-            {
-                "ok": False,
-                "configured": database_configured(),
-                "schemaReady": False,
-                **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
-                "error": INTERNAL_ERROR_MESSAGE,
-            },
-            500,
-        )
+        data = {
+            "ok": False,
+            "configured": database_configured(),
+            "schemaReady": False,
+            **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
+            "error": INTERNAL_ERROR_MESSAGE,
+        }
+        if not detailed:
+            _public_health_cache = {
+                "expiresAt": monotonic() + PUBLIC_HEALTH_CACHE_SECONDS,
+                "data": data,
+                "status": 500,
+            }
+        return payload(data, 500)
 
 
 @router.get("/api/health")

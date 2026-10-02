@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
@@ -17,6 +18,17 @@ from ..utils import iso_now
 logger = logging.getLogger("smg.routers.attendance")
 INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
 router = APIRouter()
+DEFAULT_ATTENDANCE_WINDOW_DAYS = 90
+
+
+def attendance_since_for_request(request: Request) -> str:
+    raw = str(request.query_params.get("attendanceSince") or "").strip()
+    if raw:
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+        except Exception:
+            pass
+    return (datetime.now(timezone.utc).date() - timedelta(days=DEFAULT_ATTENDANCE_WINDOW_DAYS)).isoformat()
 
 
 def response(data: dict, status: int = 200):
@@ -37,6 +49,7 @@ async def handler(request: Request):
     if not database_configured():
         return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
     try:
+        attendance_since = attendance_since_for_request(request)
         if request.method == "POST":
             raw = await request.body()
             if len(raw) > 2 * 1024 * 1024:
@@ -51,7 +64,7 @@ async def handler(request: Request):
                 return response({"ok": False, "error": "Data da chamada inválida."}, 400)
             if not records:
                 return response({"ok": False, "error": "Nenhuma alteração de chamada foi enviada."}, 400)
-            critical = await fetch_critical_state()
+            critical = await fetch_critical_state(attendance_since=attendance_since)
             allowed_ids = {str(item.get("id") or "") for item in teacher_public_state(critical)["students"]}
             unknown_ids = sorted(str(value) for value in records if str(value) not in allowed_ids)
             if unknown_ids:
@@ -64,9 +77,9 @@ async def handler(request: Request):
                 entity_id=day,
                 details={"records": len(records)},
             )
+            critical = await fetch_critical_state(attendance_since=attendance_since)
         else:
-            critical = await fetch_critical_state()
-
+            critical = await fetch_critical_state(attendance_since=attendance_since)
 
         data = teacher_public_state(critical)
         return response(
@@ -75,6 +88,7 @@ async def handler(request: Request):
                 "exists": len(data["students"]) > 0,
                 "provider": database_provider(),
                 "updatedAt": data.get("updatedAt") or iso_now(),
+                "attendanceSince": attendance_since,
                 "data": data,
             }
         )

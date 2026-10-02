@@ -10,6 +10,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from .db import connection
+from .domains import ensure_domain_schema, migrate_supplemental_state
 from .utils import as_dict, as_list, iso_now, iso_value, jsonable
 
 SCHEMA_VERSION = 3
@@ -147,6 +148,33 @@ async def get_sync_revision() -> int:
             await cur.execute("SELECT value FROM public.smg_meta WHERE key='sync_revision' LIMIT 1")
             row = await cur.fetchone()
     return int(as_dict(row[0] if row else {}).get("revision") or 0)
+
+
+async def get_sync_marker() -> dict:
+    """Read only lightweight sync metadata; never fetch operational tables."""
+    await ensure_core_schema()
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT key,value,updated_at
+                FROM public.smg_meta
+                WHERE key IN ('sync_revision','critical_state')
+                """
+            )
+            rows = await cur.fetchall()
+
+    by_key = {str(row[0]): (as_dict(row[1]), row[2]) for row in rows}
+    revision_value, _ = by_key.get("sync_revision", ({}, None))
+    critical_value, critical_updated_at = by_key.get("critical_state", ({}, None))
+    return {
+        "revision": int(revision_value.get("revision") or 0),
+        "updatedAt": str(
+            critical_value.get("updatedAt")
+            or iso_value(critical_updated_at)
+            or ""
+        ),
+    }
 
 
 async def fetch_sync_tombstones() -> dict:
@@ -336,6 +364,7 @@ async def _sync_payments(cur, rows: list[dict], deleted_ids: list[str]) -> None:
 
 async def sync_critical_state(payload: dict) -> dict:
     await ensure_core_schema()
+    await ensure_domain_schema()
     state = as_dict(payload.get("state"))
     deleted = as_dict(payload.get("deleted"))
     tombstones = as_list(payload.get("tombstones"))
@@ -376,8 +405,13 @@ async def sync_critical_state(payload: dict) -> dict:
         if isinstance(item, dict) and item.get("id")
     ]
 
+    attendance_source = (
+        as_dict(payload.get("attendanceDelta"))
+        if isinstance(payload.get("attendanceDelta"), dict)
+        else as_dict(state.get("attendance"))
+    )
     attendance_rows = []
-    for day, records in as_dict(state.get("attendance")).items():
+    for day, records in attendance_source.items():
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(day)):
             continue
         for student_id, record in as_dict(records).items():
@@ -493,18 +527,20 @@ async def sync_critical_state(payload: dict) -> dict:
                         ),
                     ),
                 )
-    # Migração progressiva: mantém o formato legado compatível, mas espelha cada
-    # coleção complementar em registros independentes e versionados.
-    from .domains import migrate_supplemental_state
-    domain_result = await migrate_supplemental_state(state)
+
+                # O espelho complementar participa da mesma transação. Se ele
+                # falhar, nenhum dado essencial é confirmado pela metade.
+                domain_result = await migrate_supplemental_state(state, cursor=cur)
+
     return {
         "updatedAt": now,
         "domainRecords": domain_result["migrated"],
+        "domainRecordsDeleted": domain_result["deleted"],
         "revision": sync_revision,
     }
 
 
-async def fetch_critical_state() -> dict:
+async def fetch_critical_state(*, attendance_since: str | None = None) -> dict:
     await ensure_core_schema()
     async with connection() as conn:
         async with conn.cursor() as cur:
@@ -527,9 +563,25 @@ async def fetch_critical_state() -> dict:
             )
             payments = [with_item_updated_at(row[0], row[1]) for row in await cur.fetchall()]
 
-            await cur.execute(
-                "SELECT attendance_date::text, student_id, record FROM public.smg_attendance ORDER BY attendance_date, student_id"
-            )
+            attendance_floor = str(attendance_since or "").strip()
+            if attendance_floor and re.fullmatch(r"\d{4}-\d{2}-\d{2}", attendance_floor):
+                await cur.execute(
+                    """
+                    SELECT attendance_date::text, student_id, record
+                    FROM public.smg_attendance
+                    WHERE attendance_date >= %s::date
+                    ORDER BY attendance_date, student_id
+                    """,
+                    (attendance_floor,),
+                )
+            else:
+                await cur.execute(
+                    """
+                    SELECT attendance_date::text, student_id, record
+                    FROM public.smg_attendance
+                    ORDER BY attendance_date, student_id
+                    """
+                )
             attendance_rows = await cur.fetchall()
 
             await cur.execute("SELECT value, updated_at FROM public.smg_meta WHERE key='critical_state' LIMIT 1")
