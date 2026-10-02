@@ -35,7 +35,7 @@
     const CLIENT_KEY = "arteDeAprenderERP.supabase.clientId";
     const PUSH_DELAY_MS = 1400;
     const PUSH_RETRY_MS = 6000;
-    const PULL_INTERVAL_MS = 60_000;
+    const PULL_INTERVAL_MS = 15_000;
 
     const originalSaveState = saveState;
     const originalFlushSaveState = flushSaveState;
@@ -440,6 +440,7 @@
     window.__saberMaisSupabase = {
       syncNow: () => syncNow({ force: true, manual: true }),
       pullNow: () => pullNow({ force: true, manual: true }),
+      pullSilent: () => pullNow({ force: true }),
       status: () => ({
         ready,
         busy,
