@@ -78,12 +78,14 @@
     try {
       if (typeof window.flushSaveState === "function") {
         window.flushSaveState({ skipMarkLocal: false, skipRemote: false });
-        return;
+      } else if (window.state) {
+        nativeSetItem.call(localStorage, STORAGE_KEY, JSON.stringify(window.state));
       }
-      if (window.state) nativeSetItem.call(localStorage, STORAGE_KEY, JSON.stringify(window.state));
     } catch (error) {
       if (isQuotaError(error)) notifyStorageProblem();
       else console.warn("SMG: não foi possível concluir o salvamento antes de sair.", error);
+    } finally {
+      try { window.__saberMaisSupabase?.flushBeforeUnload?.(); } catch {}
     }
   }
 
