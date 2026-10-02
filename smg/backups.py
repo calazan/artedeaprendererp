@@ -21,7 +21,16 @@ CREATE TABLE IF NOT EXISTS public.smg_manual_backups (
 CREATE INDEX IF NOT EXISTS smg_manual_backups_created_idx
   ON public.smg_manual_backups(created_at DESC);
 ALTER TABLE public.smg_manual_backups ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.smg_manual_backups FROM anon, authenticated;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.smg_manual_backups FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.smg_manual_backups FROM authenticated';
+  END IF;
+END
+$$;
 """
 
 _schema_ready = False

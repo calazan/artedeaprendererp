@@ -55,8 +55,18 @@ CREATE INDEX IF NOT EXISTS smg_whatsapp_message_log_created_idx
 
 ALTER TABLE public.smg_whatsapp_message_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.smg_whatsapp_recipients ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.smg_whatsapp_message_log FROM anon, authenticated;
-REVOKE ALL ON TABLE public.smg_whatsapp_recipients FROM anon, authenticated;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.smg_whatsapp_message_log FROM anon';
+    EXECUTE 'REVOKE ALL ON TABLE public.smg_whatsapp_recipients FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.smg_whatsapp_message_log FROM authenticated';
+    EXECUTE 'REVOKE ALL ON TABLE public.smg_whatsapp_recipients FROM authenticated';
+  END IF;
+END
+$$;
 
 INSERT INTO public.smg_meta(key, value, updated_at)
 VALUES (

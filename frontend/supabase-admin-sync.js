@@ -33,6 +33,8 @@
     const SNAPSHOT_KEY = "arteDeAprenderERP.supabase.snapshot.v2";
     const LAST_SYNC_KEY = "arteDeAprenderERP.supabase.lastSyncAt";
     const CLIENT_KEY = "arteDeAprenderERP.supabase.clientId";
+    const PENDING_KEY = "arteDeAprenderERP.supabase.pendingPush.v1";
+    const KEEPALIVE_MAX_BYTES = 60 * 1024;
     const PUSH_DELAY_MS = 1400;
     const PUSH_RETRY_MS = 6000;
     const PULL_INTERVAL_MS = 15_000;
@@ -44,8 +46,8 @@
     let busy = false;
     let ready = false;
     let lastFingerprint = "";
-    let localRevision = 0;
-    let pendingPush = false;
+    let localRevision = Number(readJSON(PENDING_KEY, {})?.revision || 0);
+    let pendingPush = readJSON(PENDING_KEY, {})?.pending === true;
     let retryPush = false;
 
     function clone(value) {
@@ -68,6 +70,19 @@
       } catch {
         return false;
       }
+    }
+
+    function persistPendingPush() {
+      pendingPush = true;
+      writeJSON(PENDING_KEY, {
+        pending: true,
+        revision: localRevision,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    function clearPendingPush() {
+      try { localStorage.removeItem(PENDING_KEY); } catch {}
     }
 
     function clientId() {
@@ -203,6 +218,8 @@
       if (!response.ok || data.ok === false) {
         const error = new Error(data.error || `Erro HTTP ${response.status}`);
         error.status = response.status;
+        error.code = String(data.code || "");
+        error.data = data;
         throw error;
       }
       return data;
@@ -216,19 +233,58 @@
 
     function markLocalChange() {
       localRevision += 1;
-      pendingPush = true;
+      persistPendingPush();
       retryPush = false;
       queuePush();
     }
 
+    function syncEnvelope(payload = criticalState()) {
+      return {
+        state: payload,
+        deleted: deletedSinceLast(payload),
+        clientId: clientId(),
+        source: "saber-mais-admin",
+      };
+    }
+
+    function flushPendingKeepalive() {
+      if (!pendingPush) return false;
+      persistPendingPush();
+      const key = syncKey();
+      if (key.length < 6) return false;
+
+      const body = JSON.stringify(syncEnvelope());
+      const size = new TextEncoder().encode(body).byteLength;
+      if (size > KEEPALIVE_MAX_BYTES) return false;
+
+      try {
+        const pending = fetch(SYNC_ENDPOINT, {
+          method: "POST",
+          cache: "no-store",
+          credentials: "same-origin",
+          keepalive: true,
+          headers: {
+            Accept: "application/json",
+            "Content-Type": "application/json",
+            "x-sync-key": key,
+          },
+          body,
+        });
+        pending?.catch?.(() => {});
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
     async function syncNow(options = {}) {
       if (busy) {
-        pendingPush = true;
+        persistPendingPush();
         return false;
       }
       const key = syncKey();
       if (key.length < 6) {
-        pendingPush = true;
+        persistPendingPush();
         setSupabaseStatus("Informe novamente a chave de sincronização nas configurações.", "warn");
         if (options.manual) showToast("A chave de sincronização local está vazia.");
         return false;
@@ -242,16 +298,10 @@
       busy = true;
       setSupabaseStatus("Enviando alterações para o Supabase...", "working");
       try {
-        const deleted = deletedSinceLast(payload);
         const result = await request(SYNC_ENDPOINT, {
           method: "POST",
           headers: { "x-sync-key": key },
-          body: JSON.stringify({
-            state: payload,
-            deleted,
-            clientId: clientId(),
-            source: "saber-mais-admin",
-          }),
+          body: JSON.stringify(syncEnvelope(payload)),
         });
         writeJSON(SNAPSHOT_KEY, idsSnapshot(payload));
         localStorage.setItem(LAST_SYNC_KEY, result.updatedAt || new Date().toISOString());
@@ -259,6 +309,8 @@
         ready = true;
         retryPush = false;
         pendingPush = localRevision !== revisionAtStart;
+        if (pendingPush) persistPendingPush();
+        else clearPendingPush();
         stopBlobLoops();
         setSupabaseStatus(
           pendingPush
@@ -269,7 +321,18 @@
         if (options.manual) showToast(pendingPush ? "Há uma alteração mais recente aguardando envio." : "Dados enviados ao Supabase.");
         return true;
       } catch (error) {
-        pendingPush = true;
+        if (error.status === 409 && error.code === "REMOTE_CONFLICT" && !options.conflictRetry) {
+          try {
+            const merged = await mergeRemoteConflict(key);
+            if (merged) {
+              busy = false;
+              return await syncNow({ ...options, force: true, conflictRetry: true });
+            }
+          } catch (conflictError) {
+            console.error("Falha ao reconciliar conflito de sincronização", conflictError);
+          }
+        }
+        persistPendingPush();
         retryPush = true;
         console.error("Falha ao sincronizar Supabase", error);
         setSupabaseStatus(`Falha: ${error.message || "erro desconhecido"}. Alteração local preservada.`, "error");
@@ -293,6 +356,73 @@
         });
       });
       return result;
+    }
+
+    function mergeById(remoteItems = [], localItems = [], deletedIds = []) {
+      const deleted = new Set((Array.isArray(deletedIds) ? deletedIds : []).map((id) => String(id || "")));
+      const byId = new Map();
+      (Array.isArray(remoteItems) ? remoteItems : []).forEach((item) => {
+        const id = String(item?.id || "");
+        if (id && !deleted.has(id)) byId.set(id, clone(item));
+      });
+      (Array.isArray(localItems) ? localItems : []).forEach((item) => {
+        const id = String(item?.id || "");
+        if (!id || deleted.has(id)) return;
+        byId.set(id, { ...(byId.get(id) || {}), ...clone(item) });
+      });
+      return [...byId.values()];
+    }
+
+    function mergeConflictState(remote = {}, local = {}) {
+      const deleted = deletedSinceLast(local);
+      const result = { ...clone(remote), ...clone(local) };
+      [
+        "students", "activityCatalog", "extraEvents", "extraParticipants", "payments",
+        "otherIncomes", "expenses", "proposals", "expenseCategories", "agendaEvents",
+        "bankAccounts", "bankMovements", "paymentExclusions",
+      ].forEach((key) => {
+        result[key] = mergeById(remote[key], local[key], deleted[key]);
+      });
+      result.attendance = mergeAttendance(remote.attendance || {}, local.attendance || {});
+      result.rentalManagement = {
+        ...(remote.rentalManagement || {}),
+        ...(local.rentalManagement || {}),
+      };
+      result.settings = {
+        ...(remote.settings || {}),
+        ...(local.settings || {}),
+      };
+      return result;
+    }
+
+    async function mergeRemoteConflict(key) {
+      const local = criticalState();
+      const result = await request(SYNC_ENDPOINT, {
+        method: "GET",
+        headers: { "x-sync-key": key },
+      });
+      const remote = result.data || {};
+      const localSecurity = {
+        password: state.settings?.password || "",
+        passwordHash: state.settings?.passwordHash || "",
+        passwordEnabled: state.settings?.passwordEnabled !== false,
+        passwordSecurityVersion: state.settings?.passwordSecurityVersion || "4.6.3",
+        remoteSync: clone(state.settings?.remoteSync || {}),
+      };
+      const merged = mergeConflictState(remote, local);
+      state = normalizeState({
+        ...state,
+        ...merged,
+        settings: {
+          ...(state.settings || {}),
+          ...(merged.settings || {}),
+          ...localSecurity,
+        },
+      });
+      originalFlushSaveState({ skipRemote: true, skipMarkLocal: true });
+      renderAll();
+      persistPendingPush();
+      return true;
     }
 
     function hasRemoteData(remote = {}) {
@@ -329,7 +459,7 @@
 
         // Se o usuário salvou enquanto o GET estava em andamento, não aplique o snapshot antigo.
         if (pendingPush || localRevision !== revisionAtStart) {
-          pendingPush = true;
+          persistPendingPush();
           setSupabaseStatus("Alteração local detectada durante a atualização; dados remotos não foram aplicados.", "working");
           if (options.manual) showToast("A atualização remota foi adiada para preservar sua alteração.");
           return false;
@@ -401,7 +531,7 @@
         const localHasData = hasRemoteData(local);
 
         if (pendingPush) {
-          queuePush(0);
+          await syncNow({ force: true, recovery: true });
         } else if (total === 0 && localHasData) {
           pendingPush = true;
           await syncNow({ force: true });
@@ -441,12 +571,14 @@
       syncNow: () => syncNow({ force: true, manual: true }),
       pullNow: () => pullNow({ force: true, manual: true }),
       pullSilent: () => pullNow({ force: true }),
+      flushBeforeUnload: flushPendingKeepalive,
       status: () => ({
         ready,
         busy,
         pendingPush,
         localRevision,
         lastSyncAt: localStorage.getItem(LAST_SYNC_KEY) || "",
+        pendingSince: readJSON(PENDING_KEY, {})?.updatedAt || "",
       }),
     };
 
