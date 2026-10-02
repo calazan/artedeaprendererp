@@ -30,6 +30,7 @@
 
     const HEALTH_ENDPOINT = "/api/supabase-health";
     const SYNC_ENDPOINT = "/api/supabase-sync";
+    const REVISION_ENDPOINT = "/api/sync-revision";
     const SNAPSHOT_KEY = "arteDeAprenderERP.supabase.snapshot.v2";
     const LAST_SYNC_KEY = "arteDeAprenderERP.supabase.lastSyncAt";
     const CLIENT_KEY = "arteDeAprenderERP.supabase.clientId";
@@ -37,6 +38,7 @@
     const BASE_STATE_KEY = "arteDeAprenderERP.supabase.baseState.v3";
     const BASE_REVISION_KEY = "arteDeAprenderERP.supabase.baseRevision.v3";
     const PROTOCOL_VERSION = 2;
+    const ATTENDANCE_WINDOW_DAYS = 90;
     const KEEPALIVE_MAX_BYTES = 60 * 1024;
     const LIST_RESOURCES = [
       "students", "activityCatalog", "extraEvents", "extraParticipants", "payments",
@@ -60,6 +62,7 @@
     let retryPush = false;
     let baseState = readJSON(BASE_STATE_KEY, null);
     let baseRevision = Number(localStorage.getItem(BASE_REVISION_KEY) || 0);
+    let lastRemoteMarker = "";
 
     function clone(value) {
       try { return structuredClone(value); } catch { return JSON.parse(JSON.stringify(value)); }
@@ -207,9 +210,70 @@
       return result;
     }
 
+    function attendanceWindowStart() {
+      const value = new Date();
+      value.setUTCDate(value.getUTCDate() - ATTENDANCE_WINDOW_DAYS);
+      return value.toISOString().slice(0, 10);
+    }
+
+    function mergeAttendanceWindow(local = {}, remote = {}) {
+      const cutoff = attendanceWindowStart();
+      const result = {};
+      Object.entries(local && typeof local === "object" ? local : {}).forEach(([day, records]) => {
+        if (String(day) < cutoff) result[day] = clone(records);
+      });
+      Object.entries(remote && typeof remote === "object" ? remote : {}).forEach(([day, records]) => {
+        result[day] = clone(records);
+      });
+      return result;
+    }
+
+    function buildAttendanceChanges(base = {}, local = {}) {
+      const result = {};
+      const cutoff = attendanceWindowStart();
+      const lastSyncMs = Date.parse(localStorage.getItem(LAST_SYNC_KEY) || "") || 0;
+
+      Object.entries(local && typeof local === "object" ? local : {}).forEach(([day, records]) => {
+        Object.entries(records && typeof records === "object" ? records : {}).forEach(([studentId, record]) => {
+          const previous = base?.[day]?.[studentId];
+          const currentJson = JSON.stringify(stableValue(record || {}));
+          const previousJson = JSON.stringify(stableValue(previous || {}));
+          if (previous && currentJson === previousJson) return;
+
+          const updatedMs = Date.parse(record?.updatedAt || "") || 0;
+          if (!previous && String(day) < cutoff && updatedMs <= lastSyncMs) return;
+
+          result[day] ||= {};
+          result[day][studentId] = clone(record);
+        });
+      });
+      return result;
+    }
+
+    function hasAttendanceChanges(value = {}) {
+      return Object.values(value).some(
+        (records) => records && typeof records === "object" && Object.keys(records).length > 0,
+      );
+    }
+
+    function syncEndpointForAttendance(attendance = {}) {
+      const days = Object.keys(attendance || {}).sort();
+      const since = days.length && days[0] < attendanceWindowStart()
+        ? days[0]
+        : attendanceWindowStart();
+      return `${SYNC_ENDPOINT}?attendanceSince=${encodeURIComponent(since)}`;
+    }
+
+    function markerValue(revision, updatedAt) {
+      return `${Number(revision || 0)}:${String(updatedAt || "")}`;
+    }
+
     function persistBase(remote, revision) {
-      baseState = clone(remote && typeof remote === "object" ? remote : {});
+      const next = clone(remote && typeof remote === "object" ? remote : {});
+      next.attendance = mergeAttendanceWindow(baseState?.attendance || {}, next.attendance || {});
+      baseState = next;
       baseRevision = Number(revision || 0);
+      lastRemoteMarker = markerValue(baseRevision, next.updatedAt || "");
       writeJSON(BASE_STATE_KEY, baseState);
       try { localStorage.setItem(BASE_REVISION_KEY, String(baseRevision)); } catch {}
     }
@@ -335,8 +399,9 @@
 
     function applyRemoteState(remote, revision, extraChanges = null, attendance = null) {
       let canonical = clone(remote && typeof remote === "object" ? remote : {});
-      if (extraChanges && hasChanges(extraChanges)) {
-        canonical = reapplyLocalChanges(canonical, extraChanges, attendance || state.attendance || {});
+      canonical.attendance = mergeAttendanceWindow(state.attendance || {}, canonical.attendance || {});
+      if ((extraChanges && hasChanges(extraChanges)) || hasAttendanceChanges(attendance || {})) {
+        canonical = reapplyLocalChanges(canonical, extraChanges || {}, attendance || {});
       }
       const security = localSecuritySettings();
       state = normalizeState({
@@ -443,7 +508,7 @@
         protocolVersion: PROTOCOL_VERSION,
         baseRevision,
         changes,
-        attendance: clone(payload.attendance || {}),
+        attendance: buildAttendanceChanges(baseState?.attendance || {}, payload.attendance || {}),
         clientId: clientId(),
         source: "saber-mais-admin-v2",
       };
@@ -461,7 +526,8 @@
       if (size > KEEPALIVE_MAX_BYTES) return false;
 
       try {
-        const pending = fetch(SYNC_ENDPOINT, {
+        const envelope = syncEnvelope();
+        const pending = fetch(syncEndpointForAttendance(envelope.attendance), {
           method: "POST",
           cache: "no-store",
           credentials: "same-origin",
@@ -471,7 +537,7 @@
             "Content-Type": "application/json",
             "x-sync-key": key,
           },
-          body,
+          body: JSON.stringify(envelope),
         });
         pending?.catch?.(() => {});
         return true;
@@ -526,7 +592,11 @@
       const remote = error?.data?.data || {};
       const revision = Number(error?.data?.revision || 0);
       persistBase(remote, revision);
-      const rebased = reapplyLocalChanges(remote, submittedChanges, submittedAttendance);
+      const remoteWithHistory = {
+        ...clone(remote),
+        attendance: mergeAttendanceWindow(state.attendance || {}, remote.attendance || {}),
+      };
+      const rebased = reapplyLocalChanges(remoteWithHistory, submittedChanges, submittedAttendance);
       const security = localSecuritySettings();
       state = normalizeState({
         ...state,
@@ -569,7 +639,10 @@
 
       const payload = criticalState();
       const submittedChanges = buildChanges(baseState || {}, payload);
-      const submittedAttendance = clone(payload.attendance || {});
+      const submittedAttendance = buildAttendanceChanges(
+        baseState?.attendance || {},
+        payload.attendance || {},
+      );
       const nextFingerprint = fingerprint(payload);
       if (!options.force && !pendingPush && !hasChanges(submittedChanges) && nextFingerprint === lastFingerprint) return true;
 
@@ -577,7 +650,7 @@
       busy = true;
       setSupabaseStatus("Enviando alterações para o banco...", "working");
       try {
-        const result = await request(SYNC_ENDPOINT, {
+        const result = await request(syncEndpointForAttendance(submittedAttendance), {
           method: "POST",
           headers: { "x-sync-key": key },
           body: JSON.stringify({
@@ -595,8 +668,8 @@
           ? buildChanges(payload, latest)
           : {};
         const laterAttendance = localRevision !== revisionAtStart
-          ? clone(latest.attendance || {})
-          : null;
+          ? buildAttendanceChanges(payload.attendance || {}, latest.attendance || {})
+          : {};
 
         const applied = applyRemoteState(
           result.data || {},
@@ -611,7 +684,7 @@
         retryPush = false;
         pendingPush = localRevision !== revisionAtStart && (
           hasChanges(laterChanges)
-          || JSON.stringify(laterAttendance || {}) !== JSON.stringify(payload.attendance || {})
+          || hasAttendanceChanges(laterAttendance)
         );
         if (pendingPush) persistPendingPush();
         else clearPendingPush();
@@ -744,6 +817,29 @@
       return false;
     }
 
+    async function pollRevision() {
+      if (busy || pendingPush || document.hidden) return false;
+      const key = syncKey();
+      if (key.length < 6) return false;
+      try {
+        const result = await request(REVISION_ENDPOINT, {
+          method: "GET",
+          headers: { "x-sync-key": key },
+        });
+        const marker = markerValue(result.revision, result.updatedAt);
+        if (!lastRemoteMarker) {
+          lastRemoteMarker = marker;
+          return false;
+        }
+        if (marker === lastRemoteMarker) return false;
+        await pullNow({ force: true, revisionPoll: true });
+        return true;
+      } catch (error) {
+        console.error("Falha ao consultar revisão do banco", error);
+        return false;
+      }
+    }
+
     async function pullNow(options = {}) {
       if (busy) return false;
       const key = syncKey();
@@ -837,7 +933,7 @@
 
         clearInterval(pullTimer);
         pullTimer = setInterval(() => {
-          if (!document.hidden && !busy && !pendingPush) pullNow().catch(() => {});
+          pollRevision().catch(() => {});
         }, PULL_INTERVAL_MS);
       } catch (error) {
         ready = false;
@@ -874,6 +970,7 @@
         lastSyncAt: localStorage.getItem(LAST_SYNC_KEY) || "",
         pendingSince: readJSON(PENDING_KEY, {})?.updatedAt || "",
         baseRevision,
+        remoteMarker: lastRemoteMarker,
         protocolVersion: PROTOCOL_VERSION,
       }),
     };
