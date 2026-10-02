@@ -99,3 +99,9 @@ def test_task_local_alert_marker_is_volatile_and_legacy_indexeddb_is_deleted():
     assert '"arteDeAprenderERPBackupFolder"' in bridge
     assert "indexedDB.deleteDatabase(name)" in bridge
     assert "await deleteLegacyIndexedDb();" in bridge
+
+
+def test_legacy_backup_folder_db_is_not_reopened_by_app():
+    source = (ROOT / "frontend" / "app.min.js").read_text(encoding="utf-8")
+    assert "async function initAutomaticBackupFolder(){automaticBackupDirectoryHandle=null,renderAutoBackupStatus()}" in source
+    assert "async function initAutomaticBackupFolder(){automaticBackupDirectoryHandle=await loadAutomaticBackupFolderHandle()" not in source
