@@ -88,3 +88,14 @@ def test_security_branch_preserves_latest_main_attendance_and_preregistration_fi
     assert 'aria-label="Manhã das 08:00 às 12:00">M</button>' in app
     assert "app.min.js?v=469-online2" in worker
     assert "app.min.js?v=469-online2" in index
+
+
+def test_task_local_alert_marker_is_volatile_and_legacy_indexeddb_is_deleted():
+    tasks = (ROOT / "frontend" / "tasks-routine.js").read_text(encoding="utf-8")
+    bridge = (ROOT / "frontend" / "python-auth-bridge.js").read_text(encoding="utf-8")
+
+    assert 'const LOCAL_ALERT_PREFIX = "arteDeAprenderERP.task.local-alert."' in tasks
+    assert 'const LOCAL_ALERT_PREFIX = "smg.task.local-alert."' not in tasks
+    assert '"arteDeAprenderERPBackupFolder"' in bridge
+    assert "indexedDB.deleteDatabase(name)" in bridge
+    assert "await deleteLegacyIndexedDb();" in bridge

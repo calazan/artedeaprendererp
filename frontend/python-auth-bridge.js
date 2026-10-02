@@ -4,6 +4,9 @@
   const SAFE_PERSISTENT_KEYS = new Set([
     "arteDeAprenderERP.navigationColors.v2",
   ]);
+  const LEGACY_INDEXED_DB_NAMES = [
+    "arteDeAprenderERPBackupFolder",
+  ];
   const nativeFetch = window.fetch.bind(window);
   const nativeStorage = {
     getItem: Storage.prototype.getItem,
@@ -45,10 +48,25 @@
     }
   }
 
+  async function deleteLegacyIndexedDb() {
+    if (!("indexedDB" in window)) return;
+    await Promise.all(LEGACY_INDEXED_DB_NAMES.map((name) => new Promise((resolve) => {
+      try {
+        const request = indexedDB.deleteDatabase(name);
+        request.onsuccess = () => resolve();
+        request.onerror = () => resolve();
+        request.onblocked = () => resolve();
+      } catch {
+        resolve();
+      }
+    })));
+  }
+
   // Execute antes de app.min.js: nenhum snapshot pessoal do namespace ERP
   // permanece no armazenamento persistente. O código legado continua enxergando
   // essas chaves, mas elas vivem somente em memória durante a sessão atual.
   purgePersistedSensitiveState();
+  deleteLegacyIndexedDb().catch(() => {});
 
   Storage.prototype.getItem = function onlineOnlyGetItem(key) {
     if (shouldVirtualize(this, key)) {
@@ -93,6 +111,7 @@
         await Promise.all(keys.map((key) => caches.delete(key)));
       } catch {}
     }
+    await deleteLegacyIndexedDb();
   }
 
   async function expireClientSession() {

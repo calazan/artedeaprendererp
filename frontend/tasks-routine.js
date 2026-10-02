@@ -8,7 +8,7 @@
   let pullInFlight = false;
   let notificationStatusText = "Verificando notificações...";
   const deletedRemoteIds = new Set();
-  const LOCAL_ALERT_PREFIX = "smg.task.local-alert.";
+  const LOCAL_ALERT_PREFIX = "arteDeAprenderERP.task.local-alert.";
 
   const esc = (value) => {
     try { return escapeHTML(value); } catch {

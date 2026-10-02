@@ -58,7 +58,9 @@ A única chave do namespace autorizada a persistir em `localStorage` durante a s
 
 Não são permitidos backups locais automáticos, cópias de erro, snapshots de funcionários/alunos/financeiro nem filas offline persistentes. O Service Worker guarda somente assets estáticos versionados (JavaScript, CSS e imagens), nunca HTML autenticado nem respostas de API.
 
-No logout, em resposta 401 e ao abrir a tela de login, o namespace do ERP e os caches são eliminados. A migração futura para APIs por entidade removerá também a dependência do snapshot amplo em memória.
+Marcadores locais auxiliares, como o controle de aviso já exibido para tarefas, usam o mesmo namespace `arteDeAprenderERP.*` e portanto também são somente voláteis. O banco IndexedDB legado usado apenas para guardar um handle de pasta de backup é removido preventivamente na inicialização e no encerramento da sessão.
+
+No logout, em resposta 401 e ao abrir a tela de login, o namespace do ERP, o IndexedDB legado de backup e os caches são eliminados. A migração futura para APIs por entidade removerá também a dependência do snapshot amplo em memória.
 
 ## Matriz de permissões
 
