@@ -53,7 +53,16 @@ CREATE TABLE IF NOT EXISTS public.smg_domain_records (
 CREATE INDEX IF NOT EXISTS smg_domain_records_active_idx
   ON public.smg_domain_records(resource_type,updated_at DESC) WHERE deleted_at IS NULL;
 ALTER TABLE public.smg_domain_records ENABLE ROW LEVEL SECURITY;
-REVOKE ALL ON TABLE public.smg_domain_records FROM anon, authenticated;
+DO $$
+BEGIN
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'anon') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.smg_domain_records FROM anon';
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'authenticated') THEN
+    EXECUTE 'REVOKE ALL ON TABLE public.smg_domain_records FROM authenticated';
+  END IF;
+END
+$$;
 """
 
 _schema_ready = False
