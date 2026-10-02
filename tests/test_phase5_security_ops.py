@@ -537,3 +537,21 @@ def test_preregistration_encryption_proposal_uses_authenticated_hashes():
     assert "HMAC-SHA-256" in source
     assert "guardianCpfHash" in source
     assert "não altera os dados existentes nesta fase" in source
+
+
+def test_login_page_does_not_loop_for_inactive_signed_session(monkeypatch):
+    monkeypatch.setenv("SESSION_SECRET", "s" * 64)
+    monkeypatch.setenv("VERCEL_ENV", "preview")
+    token = auth.create_session(
+        "00000000-0000-0000-0000-000000000001",
+        "owner",
+        "Admin",
+    )
+
+    async def inactive_identity(request, roles=ADMIN_ROLES):
+        return None
+
+    monkeypatch.setattr(auth, "authorized_identity", inactive_identity)
+    response = asyncio.run(auth.login(request_with_cookie(token)))
+    assert response.status_code == 200
+    assert b"Entre com sua conta autorizada." in response.body
