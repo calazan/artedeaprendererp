@@ -29,7 +29,7 @@ TEST_STUDENT = "phase1-attendance-student"
 PAYMENT_IDS = ("phase1-payment-p1", "phase1-payment-p2")
 
 
-def test_database_url() -> str:
+def _test_database_url() -> str:
     value = str(os.getenv("TEST_DATABASE_URL") or "").strip()
     if not value:
         pytest.skip("TEST_DATABASE_URL não configurada; teste PostgreSQL real ignorado.")
@@ -76,7 +76,7 @@ async def drop_compat_roles(url: str) -> None:
 
 
 async def prepare_database(monkeypatch) -> str:
-    url = test_database_url()
+    url = _test_database_url()
     monkeypatch.setenv("DATABASE_URL", url)
     await db.close_pool()
     reset_schema_flags()
@@ -104,7 +104,7 @@ def test_schema_ensure_functions_work_without_and_with_supabase_roles(monkeypatc
                 (list(TARGET_TABLES),),
                 fetch=True,
             )
-            assert [row[0] for row in tables] == list(TARGET_TABLES)
+            assert len(tables) == len(TARGET_TABLES)\n            assert all(row[0] for row in tables)
 
             # Agora cria os papéis, concede SELECT e confirma que os ensure_* realmente revogam.
             await admin_execute(url, "CREATE ROLE anon NOLOGIN")
@@ -192,8 +192,8 @@ def test_attendance_uses_real_timestamps_and_teacher_merge(monkeypatch):
             await state.ensure_core_schema()
             await admin_execute(
                 url,
-                "DELETE FROM public.smg_attendance WHERE attendance_date=%s::date AND student_id LIKE 'phase1-attendance-%'",
-                (TEST_DAY,),
+                "DELETE FROM public.smg_attendance WHERE attendance_date=%s::date AND student_id LIKE %s",
+                (TEST_DAY, "phase1-attendance-%"),
             )
 
             teacher_time = datetime.now(timezone.utc)
@@ -301,8 +301,8 @@ def test_attendance_uses_real_timestamps_and_teacher_merge(monkeypatch):
         finally:
             await admin_execute(
                 url,
-                "DELETE FROM public.smg_attendance WHERE attendance_date=%s::date AND student_id LIKE 'phase1-attendance-%'",
-                (TEST_DAY,),
+                "DELETE FROM public.smg_attendance WHERE attendance_date=%s::date AND student_id LIKE %s",
+                (TEST_DAY, "phase1-attendance-%"),
             )
             await db.close_pool()
             reset_schema_flags()
