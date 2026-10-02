@@ -33,8 +33,8 @@ def _legacy_sync_enabled() -> bool:
     return str(os.getenv("ALLOW_LEGACY_SYNC_KEY", "")).strip().lower() in {"1", "true", "yes"}
 
 
-def sync_authorized(request: Request, body: dict | None = None) -> bool:
-    if role_authorized(request, ADMIN_ROLES):
+async def sync_authorized(request: Request, body: dict | None = None) -> bool:
+    if await role_authorized(request, ADMIN_ROLES):
         return True
     if not _legacy_sync_enabled():
         return False
@@ -43,10 +43,10 @@ def sync_authorized(request: Request, body: dict | None = None) -> bool:
     return len(expected) >= 32 and len(received) >= 32 and safe_equal_exact_length(expected, received)
 
 
-def legacy_internal_authorized(request: Request) -> bool:
+async def legacy_internal_authorized(request: Request) -> bool:
     # Nome mantido apenas para compatibilidade de import; a regra agora é a
     # mesma sessão autenticada dos demais módulos administrativos.
-    return sync_authorized(request)
+    return await sync_authorized(request)
 
 
 def sanitize_incoming_state(value: Any) -> dict:
