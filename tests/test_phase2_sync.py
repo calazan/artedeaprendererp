@@ -438,3 +438,57 @@ def test_sync_revision_and_tombstone_are_persisted(monkeypatch):
             state._schema_ready = False
 
     asyncio.run(scenario())
+
+
+def test_repeated_delete_is_idempotent_and_does_not_need_new_revision(monkeypatch):
+    async def scenario():
+        url = await _prepare(monkeypatch)
+        student_id = "phase2-student-idempotent-delete"
+        try:
+            base_revision, base_state = await _seed_student(
+                {"id": student_id, "name": "Eva"}
+            )
+            base_item = _find(base_state["students"], student_id)
+            deletion = {
+                "students": {
+                    "tombstones": [
+                        {
+                            "id": student_id,
+                            "base": base_item,
+                            "baseUpdatedAt": base_item.get("updatedAt", ""),
+                        }
+                    ]
+                }
+            }
+
+            first_plan = apply_protocol_changes(
+                base_state,
+                deletion,
+                await state.fetch_sync_tombstones(),
+                base_revision=base_revision,
+                client_id="client-idempotent",
+            )
+            delete_revision, deleted_state = await _persist_plan(first_plan, "client-idempotent")
+
+            repeated_plan = apply_protocol_changes(
+                deleted_state,
+                deletion,
+                await state.fetch_sync_tombstones(),
+                base_revision=base_revision,
+                client_id="client-idempotent",
+            )
+            assert not repeated_plan["conflicts"]
+            assert repeated_plan["changed"] is False
+            assert repeated_plan["tombstones"] == []
+            assert await state.get_sync_revision() == delete_revision
+        finally:
+            await _sql(url, "DELETE FROM public.smg_students WHERE id=%s", (student_id,))
+            await _sql(
+                url,
+                "DELETE FROM public.smg_sync_tombstones WHERE resource_type='students' AND record_id=%s",
+                (student_id,),
+            )
+            await db.close_pool()
+            state._schema_ready = False
+
+    asyncio.run(scenario())
