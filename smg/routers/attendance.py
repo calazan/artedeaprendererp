@@ -44,7 +44,7 @@ def response(data: dict, status: int = 200):
 
 
 async def handler(request: Request):
-    if not role_authorized(request, TEACHER_ROLES):
+    if not await role_authorized(request, TEACHER_ROLES):
         return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
     if not database_configured():
         return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
