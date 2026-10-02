@@ -246,6 +246,10 @@ def apply_protocol_changes(
                     continue
                 remote_index.pop(record_id, None)
                 changed = True
+            elif existing_tombstone:
+                # Reenvio idempotente: a exclusão já foi confirmada numa revisão
+                # anterior e não precisa gerar outro tombstone nem nova revisão.
+                continue
 
             tombstone_writes.append(
                 {
