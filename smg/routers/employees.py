@@ -23,7 +23,8 @@ from ..security import legacy_internal_authorized
 logger = logging.getLogger("smg.routers.employees")
 INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
 router = APIRouter()
-MAX_FILE_BYTES = 6 * 1024 * 1024
+MAX_FILE_BYTES = 3_000_000
+MAX_DOCUMENT_BODY_BYTES = 4_250_000
 ALLOWED_MIME = {"application/pdf", "image/jpeg", "image/png", "image/webp"}
 
 
@@ -35,13 +36,19 @@ def json_response(payload: dict, status: int = 200):
     )
 
 
-async def body_json(request: Request, max_bytes: int = 10 * 1024 * 1024) -> dict:
+class PayloadTooLargeError(ValueError):
+    pass
+
+
+async def body_json(request: Request, max_bytes: int = 4 * 1024 * 1024) -> dict:
     raw = await request.body()
     if len(raw) > max_bytes:
-        return {}
+        raise PayloadTooLargeError
     try:
         value = json.loads(raw.decode("utf-8")) if raw else {}
         return value if isinstance(value, dict) else {}
+    except PayloadTooLargeError:
+        raise
     except Exception:
         return {}
 
@@ -68,6 +75,17 @@ async def employees_api(request: Request):
             body.get("deletedIds") if isinstance(body.get("deletedIds"), list) else [],
         )
         return json_response({"ok": True, **result})
+    except PayloadTooLargeError:
+        return json_response(
+            {
+                "ok": False,
+                "error": (
+                    "O corpo do upload é grande demais. Use um arquivo de até 3 MB "
+                    "em PDF, JPG, PNG ou WEBP."
+                ),
+            },
+            413,
+        )
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return json_response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
@@ -112,7 +130,7 @@ async def employee_documents_api(request: Request):
                 return json_response({"ok": False, "error": "Documento não encontrado."}, 404)
             return json_response({"ok": True, "deleted": deleted})
 
-        body = await body_json(request)
+        body = await body_json(request, MAX_DOCUMENT_BODY_BYTES)
         employee_id = text(body.get("employeeId"), 120)
         filename = safe_filename(body.get("filename"))
         mime_type = text(body.get("mimeType"), 120).lower()
@@ -131,7 +149,16 @@ async def employee_documents_api(request: Request):
         if not content:
             return json_response({"ok": False, "error": "Arquivo inválido."}, 400)
         if len(content) > MAX_FILE_BYTES:
-            return json_response({"ok": False, "error": "O arquivo deve ter no máximo 6 MB."}, 413)
+            return json_response(
+                {
+                    "ok": False,
+                    "error": (
+                        "O arquivo deve ter no máximo 3 MB. O envio usa base64 dentro "
+                        "de JSON e precisa permanecer abaixo do limite da plataforma."
+                    ),
+                },
+                413,
+            )
 
         document = await save_employee_document(
             {
