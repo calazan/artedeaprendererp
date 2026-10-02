@@ -115,6 +115,7 @@ def test_runtime_frontend_no_longer_depends_on_legacy_sync_key():
         "frontend/tasks-routine.js",
         "frontend/tasks-shopping-adjustments.js",
         "frontend/whatsapp-reminders.js",
+        "frontend/app.min.js",
     )
     for relative in files:
         source = open(os.path.join(root, relative), encoding="utf-8").read()
@@ -128,3 +129,9 @@ def test_runtime_frontend_no_longer_depends_on_legacy_sync_key():
     assert 'credentials: "same-origin"' in prereg
     assert 'credentials: "same-origin"' in tasks
     assert 'credentials: "same-origin"' in whatsapp
+
+
+def test_unused_supabase_seed_is_not_precached():
+    root = os.path.dirname(os.path.dirname(__file__))
+    worker = open(os.path.join(root, "frontend", "sw.js"), encoding="utf-8").read()
+    assert "supabase-full-state-seed-fix.js" not in worker

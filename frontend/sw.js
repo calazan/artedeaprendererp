@@ -24,7 +24,6 @@ const PRECACHE = [
   "./navigation-color-customization-v2.js?v=20261001",
   "./employee-tax-bill-upload.js?v=1",
   "./monthly-payment-amount-fix.js?v=2",
-  "./supabase-full-state-seed-fix.js?v=1",
   "./logo-zebra.svg?v=1",
   "./cashflow-report-status-filter.js?v=1",
   "./tasks-routine.js?v=1",
