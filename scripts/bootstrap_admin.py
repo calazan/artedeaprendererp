@@ -16,6 +16,7 @@ from dotenv import load_dotenv
 
 load_dotenv(ROOT / ".env")
 
+from smg.audit import record_audit
 from smg.auth_store import bootstrap_user
 from smg.config import database_provider, database_url
 
@@ -61,6 +62,23 @@ async def main() -> int:
         )
     except Exception as exc:
         print(f"ERRO: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        await record_audit(
+            None,
+            "auth_role",
+            "bootstrap_assign",
+            entity_id=result["userId"],
+            actor_id="bootstrap-script",
+            details={
+                "email": result["email"],
+                "role": result["role"],
+                "organizationId": result["organizationId"],
+            },
+        )
+    except Exception as exc:
+        print(f"ERRO: usuário atualizado, mas auditoria da atribuição de papel falhou: {exc}", file=sys.stderr)
         return 1
 
     action = "criado" if result["created"] else "já existente/atualizado"

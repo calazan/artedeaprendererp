@@ -99,3 +99,13 @@ def test_record_audit_adds_ip_user_agent_and_filters_secrets(monkeypatch):
     assert details["userAgent"] == "Audit Browser/1.0"
     assert "password" not in details
     assert "authorization" not in details
+
+
+def test_bootstrap_role_assignment_is_audited_without_password():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "bootstrap_admin.py").read_text(encoding="utf-8")
+    assert '"auth_role"' in source
+    assert '"bootstrap_assign"' in source
+    audit_block = source.split("await record_audit(", 1)[1].split(")", 1)[0]
+    assert '"password"' not in audit_block
