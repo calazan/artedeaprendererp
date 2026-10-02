@@ -772,28 +772,34 @@
         if (!ready) throw new Error("As tabelas ainda não foram preparadas.");
         stopBlobLoops();
 
-        const counts = health.counts || {};
-        const total = Number(counts.students || 0)
-          + Number(counts.activities || 0)
-          + Number(counts.events || 0)
-          + Number(counts.participants || 0)
-          + Number(counts.payments || 0);
         const local = criticalState();
         const localHasData = hasRemoteData(local);
 
         if (pendingPush) {
           if (!baseState) await seedBaseFromServer(syncKey());
           await syncNow({ force: true, recovery: true });
-        } else if (total === 0 && localHasData) {
-          if (!baseState) {
-            persistBase({}, 0);
-          }
-          persistPendingPush();
-          await syncNow({ force: true });
-        } else if (total > 0) {
-          await pullNow({ force: true });
         } else {
-          setSupabaseStatus("Conectado. O banco está vazio e aguardando os primeiros cadastros.", "ok");
+          const remoteResult = await request(SYNC_ENDPOINT, {
+            method: "GET",
+            headers: { "x-sync-key": syncKey() },
+          });
+          const remote = remoteResult.data || {};
+          const remoteHasData = hasRemoteData(remote)
+            || Object.keys(remote.attendance || {}).length > 0;
+          persistBase(remote, remoteResult.revision || 0);
+
+          if (remoteHasData) {
+            const applied = applyRemoteState(remote, remoteResult.revision || 0);
+            lastFingerprint = fingerprint(applied);
+            writeJSON(SNAPSHOT_KEY, idsSnapshot(applied));
+            clearPendingPush();
+            setSupabaseStatus(`Dados atualizados na revisão ${Number(remoteResult.revision || 0)}.`, "ok");
+          } else if (localHasData) {
+            persistPendingPush();
+            await syncNow({ force: true });
+          } else {
+            setSupabaseStatus("Conectado. O banco está vazio e aguardando os primeiros cadastros.", "ok");
+          }
         }
 
         clearInterval(pullTimer);
