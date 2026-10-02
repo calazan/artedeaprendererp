@@ -50,3 +50,45 @@ Depois do primeiro usuário, acesse `/login` e entre com o e-mail e a senha cria
 - `/api/integrity`: integridade do banco para administradores.
 
 As antigas rotas com “supabase” no nome permanecem somente como aliases de compatibilidade com versões anteriores do frontend; elas usam o mesmo Neon/PostgreSQL e não acessam Supabase Auth.
+
+## Agendamentos automáticos
+
+Os disparos automáticos usam os endpoints FastAPI protegidos pela variável
+`CRON_SECRET`. A Vercel envia o segredo no cabeçalho
+`Authorization: Bearer <CRON_SECRET>`; o valor nunca deve ser colocado em
+`vercel.json`, no código ou na URL.
+
+O `vercel.json` registra dois jobs diários, compatíveis também com o plano
+Hobby:
+
+- `GET /api/tasks?action=dispatch` às 09:00 UTC;
+- `GET /api/whatsapp-reminders?action=dispatch` às 10:00 UTC.
+
+Na Vercel, o plano Hobby atualmente limita a frequência de cada Cron Job a uma
+execução por dia e possui precisão menor que os planos Pro/Enterprise. Por isso,
+o dispatcher de tarefas mantém uma janela de recuperação de 26 horas: uma
+execução atrasada não perde a notificação e a chave idempotente evita envio
+duplicado.
+
+Para notificações de tarefas próximas do horário programado, use um scheduler
+externo a cada 5 minutos (por exemplo, GitHub Actions agendado ou cron-job.org)
+chamando:
+
+```text
+GET https://SEU_DOMINIO/api/tasks?action=dispatch
+Authorization: Bearer <CRON_SECRET>
+```
+
+O mesmo `CRON_SECRET` configurado em Production deve ser cadastrado como
+segredo do scheduler externo. Não o coloque em parâmetros de URL. O job diário
+da Vercel continua como fallback de recuperação.
+
+Referência da Vercel:
+https://vercel.com/docs/cron-jobs/manage-cron-jobs
+
+### Migrações antigas do Supabase
+
+A antiga migration que disparava workers via `pg_net/net.http_post` foi movida
+para `supabase/legacy/`. Ela é mantida somente como histórico e não deve ser
+executada no Neon. Os agendamentos vigentes usam HTTP + `CRON_SECRET`.
+
