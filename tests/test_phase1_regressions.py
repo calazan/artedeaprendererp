@@ -347,8 +347,8 @@ def make_json_request(payload: dict) -> Request:
 def test_direct_supabase_sync_sanitizes_sensitive_state(monkeypatch):
     captured = {}
 
-    async def fake_fetch():
-        return {"settings": {}, "updatedAt": "2026-10-02T12:00:00Z"}
+    async def fake_fetch(*, attendance_since=None):
+        return {"settings": {}, "attendance": {}, "updatedAt": "2026-10-02T12:00:00Z"}
 
     async def fake_backup(*args, **kwargs):
         return None
