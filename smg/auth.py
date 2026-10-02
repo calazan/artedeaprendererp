@@ -289,7 +289,7 @@ document.getElementById("login").addEventListener("submit", async (event) => {{
 
 @router.get("/login")
 async def login(request: Request):
-    if session_from_request(request):
+    if await authorized_identity(request, TEACHER_ROLES):
         return RedirectResponse("/", status_code=303, headers={"Cache-Control": "no-store"})
     return login_page(str(request.query_params.get("next") or "/"))
 
@@ -345,6 +345,10 @@ async def api_login(request: Request):
         return JSONResponse({"ok": False, "error": "E-mail ou senha inválidos."}, status_code=401)
     if account["role"] not in TEACHER_ROLES:
         return JSONResponse({"ok": False, "error": "Usuário sem acesso ativo ao ERP."}, status_code=403)
+
+    # Evita que uma entrada negativa/antiga do cache sobreviva a um novo login
+    # válido, por exemplo após reativação ou mudança de papel.
+    clear_membership_cache(str(account.get("userId") or ""))
 
     try:
         token = create_session(account["userId"], account["role"], account["displayName"])
