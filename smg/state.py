@@ -405,8 +405,13 @@ async def sync_critical_state(payload: dict) -> dict:
         if isinstance(item, dict) and item.get("id")
     ]
 
+    attendance_source = (
+        as_dict(payload.get("attendanceDelta"))
+        if isinstance(payload.get("attendanceDelta"), dict)
+        else as_dict(state.get("attendance"))
+    )
     attendance_rows = []
-    for day, records in as_dict(state.get("attendance")).items():
+    for day, records in attendance_source.items():
         if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", str(day)):
             continue
         for student_id, record in as_dict(records).items():
