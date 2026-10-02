@@ -5,7 +5,7 @@ import hashlib
 import json
 import logging
 import os
-import time
+from time import monotonic
 import uuid
 from datetime import datetime, timezone
 
@@ -98,7 +98,7 @@ async def dispatch_reminders():
     if not provider_status()["readyToSend"]:
         raise RuntimeError("Integração do WhatsApp habilitada, mas as credenciais da Meta estão incompletas.")
 
-    started = time.monotonic()
+    started = monotonic()
     deadline = started + DISPATCH_BUDGET_SECONDS
     today = iso_date_in_timezone(datetime.now(timezone.utc), settings["timezone"])
     skipped = 0
@@ -139,7 +139,7 @@ async def dispatch_reminders():
         async with semaphore:
             # O POST para a Meta usa timeout de 20 s. Não inicia um novo envio
             # se não houver margem suficiente para concluir e registrar o log.
-            if time.monotonic() > deadline - MIN_SEND_WINDOW_SECONDS:
+            if monotonic() > deadline - MIN_SEND_WINDOW_SECONDS:
                 return "deferred"
 
             row = candidate["row"]
@@ -193,7 +193,7 @@ async def dispatch_reminders():
         "deferred": deferred,
         "today": today,
         "limited": len(rows) > MAX_MESSAGES_PER_RUN or deferred > 0,
-        "elapsedMs": int((time.monotonic() - started) * 1000),
+        "elapsedMs": int((monotonic() - started) * 1000),
     }
 
 
