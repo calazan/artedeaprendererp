@@ -33,7 +33,11 @@ from ..utils import as_dict, iso_now
 logger = logging.getLogger("smg.routers.tasks")
 INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
 router = APIRouter()
-LOOKBACK = timedelta(minutes=10)
+# A Vercel Hobby executa Cron Jobs no máximo uma vez ao dia. Uma janela ampla
+# garante catch-up sem duplicar notificações, pois notification_key é idempotente.
+# Em Pro/Enterprise ou scheduler externo mais frequente, a mesma janela também
+# cobre interrupções temporárias.
+LOOKBACK = timedelta(hours=26)
 LOOKAHEAD = timedelta(seconds=20)
 DEFAULT_APP_HOST = "artedeaprendererp.vercel.app"
 
