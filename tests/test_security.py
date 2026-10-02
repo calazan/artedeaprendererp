@@ -5,6 +5,7 @@ import asyncio
 import pytest
 from starlette.requests import Request
 
+import smg.auth as auth_module
 from smg.auth import (
     MembershipLookupError,
     SessionConfigurationError,
@@ -64,7 +65,16 @@ def test_signed_session_accepts_valid_and_rejects_tampering(monkeypatch):
     token = create_session("00000000-0000-0000-0000-000000000001", "owner", "Admin")
     request = request_with_cookie(token)
     assert session_from_request(request)["role"] == "owner"
-    assert role_authorized(request)
+
+    async def membership(user_id):
+        return {
+            "role": "owner",
+            "displayName": "Admin",
+            "organizationId": "00000000-0000-0000-0000-000000000010",
+        }
+
+    monkeypatch.setattr(auth_module, "_cached_active_membership", membership)
+    assert asyncio.run(role_authorized(request))
     assert session_from_request(request_with_cookie(token + "tampered")) is None
 
 
@@ -110,7 +120,7 @@ def test_cross_origin_mutation_is_rejected(monkeypatch):
     monkeypatch.setenv("SESSION_SECRET", "s" * 64)
     token = create_session("00000000-0000-0000-0000-000000000001", "owner")
     request = request_with_cookie(token, method="POST", origin="https://evil.example")
-    assert not role_authorized(request)
+    assert not asyncio.run(role_authorized(request))
 
 
 def test_arbitrary_x_forwarded_for_does_not_override_socket_ip():
