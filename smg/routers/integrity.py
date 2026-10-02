@@ -23,7 +23,7 @@ def response(payload: dict, status: int = 200) -> JSONResponse:
 
 @router.get("/integrity")
 async def integrity(request: Request):
-    if not role_authorized(request, ADMIN_ROLES):
+    if not await role_authorized(request, ADMIN_ROLES):
         return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
     if not database_configured():
         return response({"ok": False, "error": "Banco PostgreSQL não configurado."}, 503)
