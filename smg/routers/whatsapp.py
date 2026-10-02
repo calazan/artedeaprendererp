@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
 import os
+import time
 import uuid
 from datetime import datetime, timezone
 
@@ -43,6 +45,9 @@ INTERNAL_ERROR_MESSAGE = "Erro interno do servidor."
 router = APIRouter()
 MAX_BODY_BYTES = 512 * 1024
 MAX_MESSAGES_PER_RUN = 500
+MAX_CONCURRENT_SENDS = 4
+DISPATCH_BUDGET_SECONDS = 50.0
+MIN_SEND_WINDOW_SECONDS = 22.0
 STOP_WORDS = {"SAIR", "PARAR", "CANCELAR", "CANCELAR MENSAGENS", "STOP"}
 
 
@@ -88,12 +93,16 @@ async def dispatch_reminders():
             "sent": 0,
             "skipped": len(rows),
             "failed": 0,
+            "deferred": 0,
         }
     if not provider_status()["readyToSend"]:
         raise RuntimeError("Integração do WhatsApp habilitada, mas as credenciais da Meta estão incompletas.")
 
+    started = time.monotonic()
+    deadline = started + DISPATCH_BUDGET_SECONDS
     today = iso_date_in_timezone(datetime.now(timezone.utc), settings["timezone"])
-    sent = skipped = failed = duplicates = 0
+    skipped = 0
+    candidates = []
 
     for row in rows[:MAX_MESSAGES_PER_RUN]:
         payment = as_dict(row.get("payment"))
@@ -113,48 +122,78 @@ async def dispatch_reminders():
             skipped += 1
             continue
 
-        key = reminder_key(row["paymentId"], offset_days, phone)
-        claimed = await claim_message(
+        candidates.append(
             {
-                "notificationKey": key,
-                "paymentId": row["paymentId"],
-                "studentId": row["studentId"],
-                "offsetDays": offset_days,
-                "phone": phone,
-                "guardianName": student.get("guardian") or "Responsável",
-                "studentName": student.get("name") or "Criança",
-                "amount": amount,
+                "row": row,
+                "student": student,
                 "dueDate": due_date,
+                "offsetDays": offset_days,
+                "amount": amount,
+                "phone": phone,
             }
         )
-        if not claimed:
-            duplicates += 1
-            continue
 
-        try:
-            result = await send_template_message(
-                to=phone,
-                guardian_name=student.get("guardian") or "Responsável",
-                student_name=student.get("name") or "Criança",
-                amount=format_brl(amount),
-                due_date=format_date_br(due_date),
-                timing=timing_label(offset_days),
+    semaphore = asyncio.Semaphore(MAX_CONCURRENT_SENDS)
+
+    async def send_candidate(candidate: dict) -> str:
+        async with semaphore:
+            # O POST para a Meta usa timeout de 20 s. Não inicia um novo envio
+            # se não houver margem suficiente para concluir e registrar o log.
+            if time.monotonic() > deadline - MIN_SEND_WINDOW_SECONDS:
+                return "deferred"
+
+            row = candidate["row"]
+            student = candidate["student"]
+            key = reminder_key(row["paymentId"], candidate["offsetDays"], candidate["phone"])
+            claimed = await claim_message(
+                {
+                    "notificationKey": key,
+                    "paymentId": row["paymentId"],
+                    "studentId": row["studentId"],
+                    "offsetDays": candidate["offsetDays"],
+                    "phone": candidate["phone"],
+                    "guardianName": student.get("guardian") or "Responsável",
+                    "studentName": student.get("name") or "Criança",
+                    "amount": candidate["amount"],
+                    "dueDate": candidate["dueDate"],
+                }
             )
-            await finish_message(key, {"status": "accepted", "messageId": result["messageId"]})
-            sent += 1
-        except Exception as exc:
-            await finish_message(key, {"status": "failed", "error": str(exc)})
-            failed += 1
+            if not claimed:
+                return "duplicate"
+
+            try:
+                result = await send_template_message(
+                    to=candidate["phone"],
+                    guardian_name=student.get("guardian") or "Responsável",
+                    student_name=student.get("name") or "Criança",
+                    amount=format_brl(candidate["amount"]),
+                    due_date=format_date_br(candidate["dueDate"]),
+                    timing=timing_label(candidate["offsetDays"]),
+                )
+                await finish_message(key, {"status": "accepted", "messageId": result["messageId"]})
+                return "sent"
+            except Exception as exc:
+                await finish_message(key, {"status": "failed", "error": str(exc)})
+                return "failed"
+
+    results = await asyncio.gather(*(send_candidate(candidate) for candidate in candidates))
+    sent = results.count("sent")
+    duplicates = results.count("duplicate")
+    failed = results.count("failed")
+    deferred = results.count("deferred")
 
     return {
         "ok": True,
         "checked": len(rows),
+        "eligible": len(candidates),
         "sent": sent,
         "skipped": skipped,
         "duplicates": duplicates,
         "failed": failed,
+        "deferred": deferred,
         "today": today,
-        "limited": len(rows) > MAX_MESSAGES_PER_RUN,
+        "limited": len(rows) > MAX_MESSAGES_PER_RUN or deferred > 0,
+        "elapsedMs": int((time.monotonic() - started) * 1000),
     }
 
 
