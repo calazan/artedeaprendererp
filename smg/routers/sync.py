@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -17,6 +17,7 @@ from ..state import (
     database_counts,
     fetch_critical_state,
     fetch_sync_tombstones,
+    get_sync_marker,
     get_sync_revision,
     sync_critical_state,
 )
@@ -58,6 +59,28 @@ HIGH_RISK_FINANCE_DOMAINS = (
     "expenses",
     "otherIncomes",
 )
+
+DEFAULT_ATTENDANCE_WINDOW_DAYS = 90
+
+
+def attendance_since_for_request(request: Request) -> str:
+    raw = str(request.query_params.get("attendanceSince") or "").strip()
+    if raw:
+        try:
+            return date.fromisoformat(raw).isoformat()
+        except Exception:
+            pass
+    return (datetime.now(timezone.utc).date() - timedelta(days=DEFAULT_ATTENDANCE_WINDOW_DAYS)).isoformat()
+
+
+def window_attendance_state(state: dict, attendance_since: str) -> dict:
+    result = dict(as_dict(state))
+    result["attendance"] = {
+        str(day): records
+        for day, records in as_dict(result.get("attendance")).items()
+        if str(day) >= attendance_since
+    }
+    return result
 
 
 def response(payload: dict, status: int = 200, *, version_header: bool = False) -> JSONResponse:
@@ -244,7 +267,10 @@ async def compatibility_sync(request: Request):
         )
 
     try:
-        current = await fetch_critical_state()
+        attendance_since = attendance_since_for_request(request)
+        current = await fetch_critical_state(
+            attendance_since=attendance_since if request.method == "GET" else None
+        )
         current_etag = state_etag(current)
 
         if request.method == "GET":
@@ -278,6 +304,7 @@ async def compatibility_sync(request: Request):
                     "version": APP_VERSION,
                     "storageAuth": database_provider(),
                     "provider": database_provider(),
+                    "attendanceSince": attendance_since,
                     "backup": current,
                 },
                 version_header=True,
@@ -321,7 +348,7 @@ async def compatibility_sync(request: Request):
                 "source": "legacy-sync-force-postgres" if force else "legacy-sync-compat-postgres",
             }
         )
-        updated = await fetch_critical_state()
+        updated = await fetch_critical_state(attendance_since=attendance_since)
         await record_audit(
             request,
             "critical_state",
@@ -341,6 +368,7 @@ async def compatibility_sync(request: Request):
                 "storageAuth": database_provider(),
                 "provider": database_provider(),
                 "version": APP_VERSION,
+                "attendanceSince": attendance_since,
                 "attendance": as_dict(updated.get("attendance")),
             },
             version_header=True,
@@ -357,6 +385,20 @@ async def compatibility_sync(request: Request):
             500,
             version_header=True,
         )
+
+
+@router.get("/api/sync-revision")
+async def sync_revision(request: Request):
+    if not database_configured():
+        return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
+    if not sync_authorized(request, {}):
+        return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
+    try:
+        marker = await get_sync_marker()
+        return response({"ok": True, **marker})
+    except Exception:
+        logger.exception("Erro interno inesperado no endpoint de revisão.")
+        return response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
 
 
 @router.api_route("/api/supabase-sync", methods=["GET", "POST"])
@@ -382,13 +424,15 @@ async def direct_supabase_sync(request: Request):
             return response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
 
     try:
+        attendance_since = attendance_since_for_request(request)
         if request.method == "GET":
             return response(
                 {
                     "ok": True,
-                    "data": await fetch_critical_state(),
+                    "data": await fetch_critical_state(attendance_since=attendance_since),
                     "revision": await get_sync_revision(),
                     "tombstones": await fetch_sync_tombstones(),
+                    "attendanceSince": attendance_since,
                 }
             )
 
@@ -409,7 +453,7 @@ async def direct_supabase_sync(request: Request):
                             "code": "MERGE_CONFLICT",
                             "error": "A revisão local é posterior à revisão disponível no servidor.",
                             "revision": revision,
-                            "data": current,
+                            "data": window_attendance_state(current, attendance_since),
                             "tombstones": tombstones,
                             "conflicts": [
                                 {
@@ -439,7 +483,7 @@ async def direct_supabase_sync(request: Request):
                             "code": "MERGE_CONFLICT",
                             "error": "Há alterações concorrentes que precisam ser reaplicadas sobre a versão mais recente.",
                             "revision": revision,
-                            "data": current,
+                            "data": window_attendance_state(current, attendance_since),
                             "tombstones": tombstones,
                             "conflicts": plan["conflicts"],
                         },
@@ -458,7 +502,7 @@ async def direct_supabase_sync(request: Request):
                             "merged": base_revision != revision,
                             "updatedAt": current.get("updatedAt") or "",
                             "revision": revision,
-                            "data": current,
+                            "data": window_attendance_state(current, attendance_since),
                             "tombstones": tombstones,
                             "counts": await database_counts(),
                         }
@@ -481,7 +525,7 @@ async def direct_supabase_sync(request: Request):
                         "clearTombstones": plan["clearTombstones"],
                     }
                 )
-                updated = await fetch_critical_state()
+                updated = await fetch_critical_state(attendance_since=attendance_since)
                 updated_tombstones = await fetch_sync_tombstones()
                 await record_audit(
                     request,
@@ -502,6 +546,7 @@ async def direct_supabase_sync(request: Request):
                         "revision": next_revision,
                         "data": updated,
                         "tombstones": updated_tombstones,
+                        "attendanceSince": attendance_since,
                         "counts": await database_counts(),
                     }
                 )
@@ -550,7 +595,7 @@ async def direct_supabase_sync(request: Request):
                     "revision": next_revision,
                 },
             )
-            updated = await fetch_critical_state()
+            updated = await fetch_critical_state(attendance_since=attendance_since)
             return response(
                 {
                     "ok": True,
@@ -558,6 +603,7 @@ async def direct_supabase_sync(request: Request):
                     "revision": next_revision,
                     "data": updated,
                     "tombstones": await fetch_sync_tombstones(),
+                    "attendanceSince": attendance_since,
                     "counts": await database_counts(),
                 }
             )
