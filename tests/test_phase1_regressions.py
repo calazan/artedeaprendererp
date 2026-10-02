@@ -374,7 +374,10 @@ def test_direct_supabase_sync_sanitizes_sensitive_state(monkeypatch):
         yield
 
     monkeypatch.setattr(sync_router, "database_configured", lambda: True)
-    monkeypatch.setattr(sync_router, "sync_authorized", lambda request, body: True)
+    async def fake_authorized(request, body):
+        return True
+
+    monkeypatch.setattr(sync_router, "sync_authorized", fake_authorized)
     monkeypatch.setattr(sync_router, "fetch_critical_state", fake_fetch)
     monkeypatch.setattr(sync_router, "capture_backup", fake_backup)
     monkeypatch.setattr(sync_router, "sync_critical_state", fake_sync)
