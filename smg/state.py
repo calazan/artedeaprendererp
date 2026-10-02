@@ -284,7 +284,13 @@ async def _delete_ids(cur, table: str, ids: list[str]) -> None:
         await cur.execute(f"DELETE FROM public.{table} WHERE id = ANY(%s::text[])", (clean,))
 
 
-async def _sync_payments(cur, rows: list[dict], deleted_ids: list[str]) -> None:
+async def _sync_payments(
+    cur,
+    rows: list[dict],
+    deleted_ids: list[str],
+    *,
+    allow_restore_deleted: bool = False,
+) -> None:
     incoming = dedupe_incoming_payments(rows)
     deleted = sorted({str(v or "").strip() for v in deleted_ids if str(v or "").strip()})
     deleted_set = set(deleted)
@@ -319,7 +325,12 @@ async def _sync_payments(cur, rows: list[dict], deleted_ids: list[str]) -> None:
         if occupying and str(occupying["id"]) != row_id:
             continue
         existing = existing_by_id.get(row_id)
-        if existing and existing.get("deleted_at") and row_id not in active_by_id:
+        if (
+            existing
+            and existing.get("deleted_at")
+            and row_id not in active_by_id
+            and not allow_restore_deleted
+        ):
             continue
         accepted.append(row)
 
@@ -370,6 +381,7 @@ async def sync_critical_state(payload: dict) -> dict:
     tombstones = as_list(payload.get("tombstones"))
     clear_tombstones = as_list(payload.get("clearTombstones"))
     sync_revision = int(payload.get("syncRevision") or 0)
+    force_restore = payload.get("forceRestore") is True
     now = iso_now()
 
     students = [
@@ -427,7 +439,15 @@ async def sync_critical_state(payload: dict) -> dict:
                 await _upsert_entity_rows(cur, "smg_activities", activities)
                 await _upsert_entity_rows(cur, "smg_extra_events", events)
                 await _upsert_entity_rows(cur, "smg_extra_participants", participants, event_id=True)
-                await _sync_payments(cur, payments, as_list(deleted.get("payments")))
+                await _sync_payments(
+                    cur,
+                    payments,
+                    as_list(deleted.get("payments")),
+                    allow_restore_deleted=force_restore,
+                )
+
+                if force_restore:
+                    await cur.execute("DELETE FROM public.smg_attendance")
 
                 if attendance_rows:
                     await cur.executemany(
