@@ -199,7 +199,7 @@ async def dispatch_reminders():
 
 async def handle_admin(request: Request, raw: bytes):
     body = parse_body(raw)
-    if not sync_authorized(request, body):
+    if not await sync_authorized(request, body):
         return response({"ok": False, "error": "Chave de sincronização inválida."}, 401)
 
     action = str(request.query_params.get("action") or body.get("action") or "status")

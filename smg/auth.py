@@ -13,15 +13,23 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from . import APP_VERSION
 from .auth_store import authenticate_user, get_active_membership
-from .config import database_configured, database_url, remote_sync_key, session_secret
+from .config import (
+    database_configured,
+    database_url,
+    production_environment,
+    remote_sync_key,
+    session_secret,
+)
 from .preregistration import consume_rate_limit
 
 SESSION_COOKIE = "smg_session"
 SESSION_TTL_SECONDS = 8 * 60 * 60
 SESSION_VERSION = 2
+MEMBERSHIP_CACHE_TTL_SECONDS = 60.0
 ADMIN_ROLES = frozenset({"owner", "admin", "manager"})
 TEACHER_ROLES = frozenset({*ADMIN_ROLES, "teacher"})
 router = APIRouter()
+_membership_cache: dict[str, tuple[float, dict | None]] = {}
 
 
 class SessionConfigurationError(RuntimeError):
@@ -48,15 +56,17 @@ def _session_secret() -> bytes:
             raise SessionConfigurationError("SESSION_SECRET precisa ter pelo menos 32 bytes.")
         return hashlib.sha256(b"arte-erp-session-v1\x00" + raw).digest()
 
-    # Fallback server-side para ambientes Vercel/Neon nos quais SESSION_SECRET
-    # ainda não foi provisionado. DATABASE_URL contém credencial privada do banco,
-    # nunca é enviada ao navegador e é adequada como material secreto para derivação.
-    # SESSION_SECRET continua sendo a opção preferencial e pode ser configurada a
-    # qualquer momento; a troca apenas invalida sessões antigas.
+    if production_environment():
+        raise SessionConfigurationError(
+            "SESSION_SECRET é obrigatório em produção e precisa ter pelo menos 32 bytes."
+        )
+
+    # Compatibilidade somente para desenvolvimento/local. Em produção a chave de
+    # sessão nunca é derivada de DATABASE_URL.
     db_secret_material = database_url().encode("utf-8")
     if db_secret_material:
         legacy = remote_sync_key().encode("utf-8")
-        context = b"arte-erp-session-neon-v1\x00"
+        context = b"arte-erp-session-development-v1\x00"
         if legacy:
             return hashlib.sha256(context + legacy + b"\x00" + db_secret_material).digest()
         return hashlib.sha256(context + db_secret_material).digest()
@@ -70,6 +80,14 @@ def session_configuration_ready() -> bool:
         return True
     except SessionConfigurationError:
         return False
+
+
+def session_configuration_error() -> str:
+    try:
+        _session_secret()
+        return ""
+    except SessionConfigurationError as exc:
+        return str(exc)
 
 
 def create_session(user_id: str, role: str, display_name: str = "") -> str:
@@ -156,11 +174,6 @@ def same_origin_request(request: Request) -> bool:
     return hmac.compare_digest(origin.rstrip("/"), expected.rstrip("/"))
 
 
-def role_authorized(request: Request, roles: frozenset[str] = ADMIN_ROLES) -> bool:
-    session = session_from_request(request)
-    return bool(session and str(session.get("role")) in roles and same_origin_request(request))
-
-
 async def _active_membership(user_id: str) -> dict | None:
     if not user_id or not database_configured():
         raise MembershipLookupError("Banco de autorização indisponível.")
@@ -168,6 +181,50 @@ async def _active_membership(user_id: str) -> dict | None:
         return await get_active_membership(user_id)
     except Exception as exc:
         raise MembershipLookupError("Falha ao consultar autorização.") from exc
+
+
+def clear_membership_cache(user_id: str = "") -> None:
+    if user_id:
+        _membership_cache.pop(str(user_id), None)
+    else:
+        _membership_cache.clear()
+
+
+async def _cached_active_membership(user_id: str) -> dict | None:
+    key = str(user_id or "")
+    now = time.monotonic()
+    cached = _membership_cache.get(key)
+    if cached and cached[0] > now:
+        return cached[1]
+
+    membership = await _active_membership(key)
+    _membership_cache[key] = (now + MEMBERSHIP_CACHE_TTL_SECONDS, membership)
+    return membership
+
+
+async def authorized_identity(
+    request: Request,
+    roles: frozenset[str] = ADMIN_ROLES,
+) -> dict | None:
+    session = session_from_request(request)
+    if not session or not same_origin_request(request):
+        return None
+    try:
+        membership = await _cached_active_membership(str(session.get("sub") or ""))
+    except MembershipLookupError:
+        return None
+    if not membership or str(membership.get("role") or "") not in roles:
+        return None
+    return {
+        "userId": str(session.get("sub") or ""),
+        "role": str(membership.get("role") or ""),
+        "displayName": str(membership.get("displayName") or session.get("name") or ""),
+        "organizationId": str(membership.get("organizationId") or ""),
+    }
+
+
+async def role_authorized(request: Request, roles: frozenset[str] = ADMIN_ROLES) -> bool:
+    return await authorized_identity(request, roles) is not None
 
 
 def login_page(next_path: str = "/") -> HTMLResponse:
@@ -232,7 +289,7 @@ document.getElementById("login").addEventListener("submit", async (event) => {{
 
 @router.get("/login")
 async def login(request: Request):
-    if session_from_request(request):
+    if await authorized_identity(request, TEACHER_ROLES):
         return RedirectResponse("/", status_code=303, headers={"Cache-Control": "no-store"})
     return login_page(str(request.query_params.get("next") or "/"))
 
@@ -289,6 +346,10 @@ async def api_login(request: Request):
     if account["role"] not in TEACHER_ROLES:
         return JSONResponse({"ok": False, "error": "Usuário sem acesso ativo ao ERP."}, status_code=403)
 
+    # Evita que uma entrada negativa/antiga do cache sobreviva a um novo login
+    # válido, por exemplo após reativação ou mudança de papel.
+    clear_membership_cache(str(account.get("userId") or ""))
+
     try:
         token = create_session(account["userId"], account["role"], account["displayName"])
     except SessionConfigurationError:
@@ -323,15 +384,20 @@ async def api_logout(request: Request):
 
 @router.get("/api/auth/session")
 async def api_session(request: Request):
-    session = session_from_request(request)
-    if not session:
+    identity = await authorized_identity(request, TEACHER_ROLES)
+    if not identity:
         return JSONResponse(
             {"ok": False, "authenticated": False},
             status_code=401,
             headers={"Cache-Control": "no-store"},
         )
     return JSONResponse(
-        {"ok": True, "authenticated": True, "role": session["role"], "name": session.get("name") or ""},
+        {
+            "ok": True,
+            "authenticated": True,
+            "role": identity["role"],
+            "name": identity["displayName"],
+        },
         headers={"Cache-Control": "no-store"},
     )
 

@@ -90,6 +90,20 @@ def session_secret() -> str:
     return str(os.getenv("SESSION_SECRET", "")).strip()
 
 
+def runtime_environment() -> str:
+    value = (
+        str(os.getenv("VERCEL_ENV", "")).strip()
+        or str(os.getenv("APP_ENV", "")).strip()
+        or str(os.getenv("ENVIRONMENT", "")).strip()
+        or "development"
+    )
+    return value.lower()
+
+
+def production_environment() -> bool:
+    return runtime_environment() in {"production", "prod"}
+
+
 def frontend_dir() -> Path:
     raw = str(os.getenv("SMG_FRONTEND_DIR", "frontend")).strip() or "frontend"
     path = Path(raw)
@@ -111,6 +125,8 @@ def environment_status() -> dict:
         "remoteSyncKeyConfigured": bool(remote_sync_key()),
         "sessionSecretConfigured": bool(secret),
         "sessionSecretStrong": len(secret.encode("utf-8")) >= 32 if secret else False,
+        "runtimeEnvironment": runtime_environment(),
+        "productionEnvironment": production_environment(),
         "externalFrontend": False,
     }
 

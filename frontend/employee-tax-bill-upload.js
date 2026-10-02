@@ -5,7 +5,7 @@
 
   const ENDPOINT = "/api/employee-documents";
   const KIND = "tax_bill";
-  const MAX_BYTES = 6 * 1024 * 1024;
+  const MAX_BYTES = 3_000_000;
   let bills = [];
   let loading = false;
   let loadedPeriod = "";
@@ -99,7 +99,7 @@
       return false;
     }
     if (file.size > MAX_BYTES) {
-      toast("O PDF deve ter no máximo 6 MB.");
+      toast("O PDF deve ter no máximo 3 MB.");
       return false;
     }
     const { tax } = taxById(employeeId, taxId);

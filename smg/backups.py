@@ -118,3 +118,30 @@ async def get_backup(backup_id: str) -> dict | None:
         "createdBy": row[3],
         "createdAt": iso_value(row[4]),
     }
+
+
+async def backup_exclusions_report() -> dict:
+    """Report data intentionally excluded from state snapshots."""
+    from .employees import ensure_employee_schema
+
+    await ensure_employee_schema()
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT count(*)::int, COALESCE(sum(size_bytes),0)::bigint
+                FROM public.smg_employee_documents
+                """
+            )
+            row = await cur.fetchone()
+    return {
+        "employeeDocuments": {
+            "included": False,
+            "count": int((row or [0, 0])[0] or 0),
+            "sizeBytes": int((row or [0, 0])[1] or 0),
+            "warning": (
+                "Documentos anexados de funcionários ficam fora do snapshot e "
+                "não são alterados por restaurações de backup."
+            ),
+        }
+    }
