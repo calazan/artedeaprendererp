@@ -198,25 +198,104 @@ async def delete_record(resource: str, record_id: str, *, expected_version: int 
             return (await cur.fetchone()) is not None
 
 
-async def migrate_supplemental_state(state: dict) -> dict:
-    """Mirror compatibility collections as independent versioned rows without deleting source data."""
-    migrated = 0
+MIRROR_EXCLUDED_RESOURCES = {
+    "students",
+    "activities",
+    "payments",
+    "attendance",
+    "events",
+    "event-participants",
+    "tasks",
+    "employees",
+}
+
+
+def _supplemental_mirror_rows(state: dict) -> dict[str, dict[str, dict]]:
+    by_resource: dict[str, dict[str, dict]] = {}
     for state_key, value in as_dict(state).items():
         resource = STATE_RESOURCE_ALIASES.get(state_key)
-        if not resource or resource in {
-            "students", "activities", "payments", "attendance", "events",
-            "event-participants", "tasks", "employees",
-        }:
+        if not resource or resource in MIRROR_EXCLUDED_RESOURCES:
             continue
+
+        records = by_resource.setdefault(resource, {})
         if isinstance(value, list):
-            for raw in value:
-                if isinstance(raw, dict):
-                    await save_record(resource, raw)
-                    migrated += 1
+            source = [item for item in value if isinstance(item, dict)]
         elif isinstance(value, dict):
-            if value.get("id"):
-                await save_record(resource, value)
-            else:
-                await save_record(resource, {"id": "default", **value})
-            migrated += 1
-    return {"migrated": migrated, "updatedAt": iso_now()}
+            source = [value if value.get("id") else {"id": "default", **value}]
+        else:
+            continue
+
+        for raw in source:
+            item = {
+                key: value
+                for key, value in as_dict(raw).items()
+                if not str(key).startswith("_")
+            }
+            record_id = normalize_id(item.get("id"))
+            item["id"] = record_id
+            records[record_id] = item
+    return by_resource
+
+
+async def _migrate_supplemental_with_cursor(cur, state: dict) -> dict:
+    by_resource = _supplemental_mirror_rows(state)
+    migrated = 0
+    deleted = 0
+
+    for resource, records in by_resource.items():
+        rows = [(resource, record_id, Jsonb(item)) for record_id, item in records.items()]
+        if rows:
+            await cur.executemany(
+                """
+                INSERT INTO public.smg_domain_records
+                  (resource_type,id,data,version,deleted_at,updated_at)
+                VALUES (%s,%s,%s,1,NULL,now())
+                ON CONFLICT(resource_type,id) DO UPDATE SET
+                  data=EXCLUDED.data,
+                  version=public.smg_domain_records.version+1,
+                  deleted_at=NULL,
+                  updated_at=now()
+                WHERE public.smg_domain_records.data IS DISTINCT FROM EXCLUDED.data
+                   OR public.smg_domain_records.deleted_at IS NOT NULL
+                """,
+                rows,
+            )
+            migrated += len(rows)
+
+        active_ids = sorted(records)
+        if active_ids:
+            await cur.execute(
+                """
+                UPDATE public.smg_domain_records
+                SET deleted_at=now(),version=version+1,updated_at=now()
+                WHERE resource_type=%s
+                  AND deleted_at IS NULL
+                  AND NOT (id = ANY(%s::text[]))
+                """,
+                (resource, active_ids),
+            )
+        else:
+            await cur.execute(
+                """
+                UPDATE public.smg_domain_records
+                SET deleted_at=now(),version=version+1,updated_at=now()
+                WHERE resource_type=%s
+                  AND deleted_at IS NULL
+                """,
+                (resource,),
+            )
+        deleted += max(0, int(cur.rowcount or 0))
+
+    return {"migrated": migrated, "deleted": deleted, "updatedAt": iso_now()}
+
+
+async def migrate_supplemental_state(state: dict, *, cursor=None) -> dict:
+    """Mirror compatibility collections in batches and tombstone removed rows."""
+    if cursor is not None:
+        return await _migrate_supplemental_with_cursor(cursor, state)
+
+    await ensure_domain_schema()
+    async with connection() as conn:
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                return await _migrate_supplemental_with_cursor(cur, state)
