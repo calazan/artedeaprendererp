@@ -12,6 +12,20 @@ jobs:
   python:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: artedeaprender_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d artedeaprender_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -25,3 +39,4 @@ jobs:
         run: python -m pytest -q
         env:
           PYTHONPATH: .
+          TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/artedeaprender_test
