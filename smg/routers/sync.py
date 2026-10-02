@@ -322,7 +322,7 @@ async def direct_supabase_sync(request: Request):
         if request.method == "GET":
             return response({"ok": True, "data": await fetch_critical_state()})
 
-        incoming = as_dict(body.get("state"))
+        incoming = sanitize_incoming_state(as_dict(body.get("state")))
         current = await fetch_critical_state()
         issue = supplemental_snapshot_issue(current, incoming)
         if issue:
