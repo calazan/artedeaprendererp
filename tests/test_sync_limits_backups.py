@@ -11,7 +11,7 @@ from smg.routers.employees import MAX_FILE_BYTES
 from smg.state import StateValidationError, SyncConflictError
 
 
-def request_with_body(body: bytes, path: str = "/api/database-sync") -> Request:
+def request_with_body(body: bytes, path: str = "/api/database-sync", method: str = "POST") -> Request:
     sent = False
 
     async def receive():
@@ -25,7 +25,7 @@ def request_with_body(body: bytes, path: str = "/api/database-sync") -> Request:
         {
             "type": "http",
             "http_version": "1.1",
-            "method": "POST",
+            "method": method,
             "scheme": "https",
             "path": path,
             "raw_path": path.encode(),
@@ -143,3 +143,53 @@ def test_backup_restore_requires_confirmation_and_uses_replace_all(monkeypatch):
     assert captured["destructive"] is True
     assert captured["backupReason"] == "pre-restore"
     assert captured["audited"] is True
+
+
+def test_manual_backup_uses_server_snapshot_and_ignores_client_snapshot(monkeypatch):
+    captured = {}
+
+    async def admin(request):
+        return {"sub": "owner-1", "role": "owner"}
+
+    async def current():
+        return {"students": [{"id": "server-student"}]}
+
+    async def create(snapshot, reason, created_by):
+        captured.update({"snapshot": snapshot, "reason": reason, "createdBy": created_by})
+        return {"id": "backup-1", "checksum": "abc", "createdAt": "2026-10-02T10:00:00Z"}
+
+    monkeypatch.setattr(domains_router, "authorize_backup_admin", admin)
+    monkeypatch.setattr(domains_router, "fetch_critical_state", current)
+    monkeypatch.setattr(domains_router, "create_backup", create)
+
+    request = request_with_body(
+        json.dumps({"reason": "manual", "snapshot": {"students": [{"id": "client-data"}]}}).encode(),
+        "/api/backups",
+    )
+    response = asyncio.run(domains_router.backup_create(request))
+    assert response["ok"] is True
+    assert captured["snapshot"] == {"students": [{"id": "server-student"}]}
+    assert captured["createdBy"] == "owner-1"
+
+
+def test_backup_detail_never_exposes_snapshot(monkeypatch):
+    async def admin(request):
+        return {"sub": "owner-1", "role": "owner"}
+
+    async def get(_id):
+        return {
+            "id": _id,
+            "snapshot": {"students": [{"id": "sensitive"}]},
+            "checksum": "abc",
+            "reason": "manual",
+            "createdBy": "owner-1",
+            "createdAt": "2026-10-02T10:00:00Z",
+        }
+
+    monkeypatch.setattr(domains_router, "authorize_backup_admin", admin)
+    monkeypatch.setattr(domains_router, "get_backup", get)
+    request = request_with_body(b"", "/api/backups/backup-1", method="GET")
+    response = asyncio.run(domains_router.backup(request, "backup-1"))
+    assert response["ok"] is True
+    assert "snapshot" not in response
+    assert response["id"] == "backup-1"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -11,6 +13,22 @@ from ..security import sync_authorized
 from ..state import SyncConflictError, fetch_critical_state, get_sync_revision, sync_critical_state
 
 router = APIRouter(prefix="/api")
+BACKUP_CONTROL_BODY_LIMIT = 16 * 1024
+
+
+async def read_backup_control_body(request: Request) -> dict:
+    raw = await request.body()
+    if len(raw) > BACKUP_CONTROL_BODY_LIMIT:
+        raise HTTPException(status_code=413, detail="Comando de backup muito grande.")
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="JSON de backup inválido.") from exc
+    if not isinstance(value, dict):
+        raise HTTPException(status_code=400, detail="JSON de backup inválido.")
+    return value
 
 
 class RecordPayload(BaseModel):
@@ -99,22 +117,28 @@ async def backup(request: Request, backup_id: str):
     item = await get_backup(backup_id)
     if not item:
         raise HTTPException(status_code=404, detail="Backup não encontrado.")
-    return {"ok": True, **item}
+    # O snapshot não é enviado ao navegador; restaurações ocorrem server-side.
+    return {
+        "ok": True,
+        "id": item["id"],
+        "checksum": item["checksum"],
+        "reason": item["reason"],
+        "createdBy": item["createdBy"],
+        "createdAt": item["createdAt"],
+    }
 
 
 @router.post("/backups")
 async def backup_create(request: Request):
     session = await authorize_backup_admin(request)
-    body = await request.json()
-    snapshot = body.get("snapshot") if isinstance(body, dict) else None
-    if not isinstance(snapshot, dict):
-        raise HTTPException(status_code=400, detail="Conteúdo do backup inválido.")
+    body = await read_backup_control_body(request)
+    snapshot = await fetch_critical_state()
     return {
         "ok": True,
         **await create_backup(
             snapshot,
             str(body.get("reason") or "manual"),
-            str(session.get("sub") or body.get("createdBy") or ""),
+            str(session.get("sub") or ""),
         ),
     }
 
@@ -122,8 +146,8 @@ async def backup_create(request: Request):
 @router.post("/backups/{backup_id}/restore")
 async def backup_restore(request: Request, backup_id: str):
     session = await authorize_backup_admin(request)
-    body = await request.json()
-    if not isinstance(body, dict) or str(body.get("confirm") or "") != "RESTAURAR":
+    body = await read_backup_control_body(request)
+    if str(body.get("confirm") or "") != "RESTAURAR":
         raise HTTPException(status_code=400, detail='Confirmação obrigatória: envie confirm="RESTAURAR".')
     item = await get_backup(backup_id)
     if not item:
