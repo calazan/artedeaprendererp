@@ -25,7 +25,7 @@
     if (window.__saberSupabaseAdminLoaded) return;
     appendScript({
       selector: 'script[data-supabase-admin-sync]',
-      src: "supabase-admin-sync.js?v=4",
+      src: "supabase-admin-sync.js?v=5",
       datasetKey: "supabaseAdminSync",
       errorMessage: "Não foi possível carregar a sincronização Python/Supabase.",
       onLoad: hideLegacyRemoteCard,
@@ -144,7 +144,7 @@
     if (window.__saberPreRegistrationRecoveryLoaded) return;
     appendScript({
       selector: 'script[data-pre-registration-recovery]',
-      src: "pre-registration-recovery-fix.js?v=1",
+      src: "pre-registration-recovery-fix.js?v=2",
       datasetKey: "preRegistrationRecovery",
       errorMessage: "Não foi possível carregar a recuperação do pré-cadastro.",
     });
