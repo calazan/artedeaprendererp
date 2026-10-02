@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -13,7 +13,20 @@ from .. import APP_VERSION
 from ..audit import capture_backup, record_audit
 from ..config import database_configured, database_provider
 from ..security import sanitize_incoming_state, sync_authorized
-from ..state import database_counts, fetch_critical_state, sync_critical_state
+from ..state import (
+    database_counts,
+    fetch_critical_state,
+    fetch_sync_tombstones,
+    get_sync_revision,
+    sync_critical_state,
+)
+from ..sync_merge import (
+    LIST_RESOURCES,
+    apply_protocol_changes,
+    core_deletions,
+    legacy_tombstone_conflicts,
+    sync_advisory_lock,
+)
 from ..utils import as_dict, as_list
 
 logger = logging.getLogger("smg.routers.sync")
@@ -151,6 +164,50 @@ def supplemental_snapshot_issue(current: dict, incoming: dict) -> dict | None:
     return None
 
 
+def sanitize_protocol_changes(value: Any) -> dict:
+    changes = json.loads(json.dumps(as_dict(value), ensure_ascii=False, default=str))
+    settings = as_dict(changes.get("settings"))
+    upserts = as_list(settings.get("upserts"))
+    for change in upserts:
+        if not isinstance(change, dict):
+            continue
+        for key in ("base", "value"):
+            if isinstance(change.get(key), dict):
+                change[key] = sanitize_incoming_state({"settings": change[key]}).get("settings", {})
+    return changes
+
+
+def legacy_tombstone_entries(current: dict, deleted: dict, client_id: str) -> list[dict]:
+    by_resource = {
+        resource: {
+            str(item.get("id") or ""): item
+            for item in as_list(current.get(resource))
+            if isinstance(item, dict) and str(item.get("id") or "").strip()
+        }
+        for resource in LIST_RESOURCES
+    }
+    entries = []
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+    for resource, ids_value in as_dict(deleted).items():
+        if resource not in by_resource:
+            continue
+        for record_id in as_list(ids_value):
+            clean_id = str(record_id or "").strip()
+            if not clean_id:
+                continue
+            base = as_dict(by_resource[resource].get(clean_id))
+            entries.append(
+                {
+                    "resource": resource,
+                    "id": clean_id,
+                    "deletedAt": now,
+                    "baseUpdatedAt": str(base.get("updatedAt") or ""),
+                    "clientId": client_id,
+                }
+            )
+    return entries
+
+
 def suspicious_snapshot_response(issue: dict, *, version_header: bool = False) -> JSONResponse:
     return response(
         {
@@ -276,7 +333,7 @@ async def compatibility_sync(request: Request):
             {
                 "ok": True,
                 "forced": force,
-                "updatedAt": updated.get("updatedAt") or datetime.utcnow().isoformat() + "Z",
+                "updatedAt": updated.get("updatedAt") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "revision": rev,
                 "teacherAttendanceRevision": rev,
                 "eventRosterRevision": rev,
@@ -313,44 +370,198 @@ async def direct_supabase_sync(request: Request):
 
     if request.method == "GET" and request.query_params.get("mode") == "status":
         try:
-            return response({"ok": True, "counts": await database_counts()})
+            return response(
+                {
+                    "ok": True,
+                    "counts": await database_counts(),
+                    "revision": await get_sync_revision(),
+                }
+            )
         except Exception:
             logger.exception("Erro interno inesperado no endpoint.")
             return response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
 
     try:
         if request.method == "GET":
-            return response({"ok": True, "data": await fetch_critical_state()})
+            return response(
+                {
+                    "ok": True,
+                    "data": await fetch_critical_state(),
+                    "revision": await get_sync_revision(),
+                    "tombstones": await fetch_sync_tombstones(),
+                }
+            )
 
-        incoming = sanitize_incoming_state(as_dict(body.get("state")))
-        current = await fetch_critical_state()
-        issue = supplemental_snapshot_issue(current, incoming)
-        if issue:
-            return suspicious_snapshot_response(issue)
-
+        protocol_version = int(body.get("protocolVersion") or 1)
         client_id = str(body.get("clientId") or "")
-        await capture_backup(current, source=str(body.get("source") or "admin-app"), client_id=client_id)
-        result = await sync_critical_state(
-            {
-                "state": incoming,
-                "deleted": as_dict(body.get("deleted")),
-                "clientId": client_id,
-                "source": body.get("source") or "admin-app",
-            }
-        )
-        await record_audit(
-            request,
-            "critical_state",
-            "direct_sync",
-            details={"clientId": client_id, "deleted": as_dict(body.get("deleted"))},
-        )
-        return response(
-            {
-                "ok": True,
-                "updatedAt": result["updatedAt"],
-                "counts": await database_counts(),
-            }
-        )
+
+        async with sync_advisory_lock():
+            current = await fetch_critical_state()
+            revision = await get_sync_revision()
+            tombstones = await fetch_sync_tombstones()
+
+            if protocol_version >= 2:
+                base_revision = int(body.get("baseRevision") or 0)
+                if base_revision > revision:
+                    return response(
+                        {
+                            "ok": False,
+                            "code": "MERGE_CONFLICT",
+                            "error": "A revisão local é posterior à revisão disponível no servidor.",
+                            "revision": revision,
+                            "data": current,
+                            "tombstones": tombstones,
+                            "conflicts": [
+                                {
+                                    "resource": "sync",
+                                    "id": "revision",
+                                    "fields": ["baseRevision"],
+                                    "reason": "client-ahead",
+                                }
+                            ],
+                        },
+                        409,
+                    )
+
+                changes = sanitize_protocol_changes(body.get("changes"))
+                plan = apply_protocol_changes(
+                    current,
+                    changes,
+                    tombstones,
+                    base_revision=base_revision,
+                    attendance=as_dict(body.get("attendance")),
+                    client_id=client_id,
+                )
+                if plan["conflicts"]:
+                    return response(
+                        {
+                            "ok": False,
+                            "code": "MERGE_CONFLICT",
+                            "error": "Há alterações concorrentes que precisam ser reaplicadas sobre a versão mais recente.",
+                            "revision": revision,
+                            "data": current,
+                            "tombstones": tombstones,
+                            "conflicts": plan["conflicts"],
+                        },
+                        409,
+                    )
+
+                merged_state = sanitize_incoming_state(as_dict(plan["state"]))
+                issue = supplemental_snapshot_issue(current, merged_state)
+                if issue:
+                    return suspicious_snapshot_response(issue)
+
+                if not plan["changed"]:
+                    return response(
+                        {
+                            "ok": True,
+                            "merged": base_revision != revision,
+                            "updatedAt": current.get("updatedAt") or "",
+                            "revision": revision,
+                            "data": current,
+                            "tombstones": tombstones,
+                            "counts": await database_counts(),
+                        }
+                    )
+
+                deleted = core_deletions(current, merged_state)
+                next_revision = revision + 1
+                for entry in plan["tombstones"]:
+                    entry["revision"] = next_revision
+
+                await capture_backup(current, source=str(body.get("source") or "admin-app-v2"), client_id=client_id)
+                await sync_critical_state(
+                    {
+                        "state": merged_state,
+                        "deleted": deleted,
+                        "clientId": client_id,
+                        "source": body.get("source") or "admin-app-v2",
+                        "syncRevision": next_revision,
+                        "tombstones": plan["tombstones"],
+                        "clearTombstones": plan["clearTombstones"],
+                    }
+                )
+                updated = await fetch_critical_state()
+                updated_tombstones = await fetch_sync_tombstones()
+                await record_audit(
+                    request,
+                    "critical_state",
+                    "merge_sync",
+                    details={
+                        "clientId": client_id,
+                        "baseRevision": base_revision,
+                        "revision": next_revision,
+                        "deleted": deleted,
+                    },
+                )
+                return response(
+                    {
+                        "ok": True,
+                        "merged": base_revision != revision,
+                        "updatedAt": updated.get("updatedAt") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+                        "revision": next_revision,
+                        "data": updated,
+                        "tombstones": updated_tombstones,
+                        "counts": await database_counts(),
+                    }
+                )
+
+            incoming = sanitize_incoming_state(as_dict(body.get("state")))
+            conflicts = legacy_tombstone_conflicts(incoming, current, tombstones)
+            if conflicts:
+                return response(
+                    {
+                        "ok": False,
+                        "code": "REMOTE_CONFLICT",
+                        "error": "O snapshot legado tenta restaurar registros excluídos em uma revisão mais recente.",
+                        "revision": revision,
+                        "data": current,
+                        "tombstones": tombstones,
+                        "conflicts": conflicts,
+                    },
+                    409,
+                )
+
+            issue = supplemental_snapshot_issue(current, incoming)
+            if issue:
+                return suspicious_snapshot_response(issue)
+
+            deleted = as_dict(body.get("deleted"))
+            next_revision = revision + 1
+            legacy_tombstones = legacy_tombstone_entries(current, deleted, client_id)
+            await capture_backup(current, source=str(body.get("source") or "admin-app"), client_id=client_id)
+            result = await sync_critical_state(
+                {
+                    "state": incoming,
+                    "deleted": deleted,
+                    "clientId": client_id,
+                    "source": body.get("source") or "admin-app",
+                    "syncRevision": next_revision,
+                    "tombstones": legacy_tombstones,
+                }
+            )
+            await record_audit(
+                request,
+                "critical_state",
+                "direct_sync",
+                details={
+                    "clientId": client_id,
+                    "deleted": deleted,
+                    "revision": next_revision,
+                },
+            )
+            updated = await fetch_critical_state()
+            return response(
+                {
+                    "ok": True,
+                    "updatedAt": result["updatedAt"],
+                    "revision": next_revision,
+                    "data": updated,
+                    "tombstones": await fetch_sync_tombstones(),
+                    "counts": await database_counts(),
+                }
+            )
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
+

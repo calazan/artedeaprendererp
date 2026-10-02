@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -173,7 +174,11 @@ def test_payment_deleted_and_recreated_with_same_business_key_survives(monkeypat
                 for item in (await state.fetch_critical_state())["payments"]
                 if item.get("id") in PAYMENT_IDS
             ]
-            assert payments == [p2]
+            assert [
+                {key: value for key, value in item.items() if key != "updatedAt"}
+                for item in payments
+            ] == [p2]
+            assert payments[0]["updatedAt"]
         finally:
             await admin_execute(
                 url,
@@ -358,6 +363,16 @@ def test_direct_supabase_sync_sanitizes_sensitive_state(monkeypatch):
     async def fake_counts():
         return {"students": 1}
 
+    async def fake_revision():
+        return 0
+
+    async def fake_tombstones():
+        return {}
+
+    @asynccontextmanager
+    async def fake_lock():
+        yield
+
     monkeypatch.setattr(sync_router, "database_configured", lambda: True)
     monkeypatch.setattr(sync_router, "sync_authorized", lambda request, body: True)
     monkeypatch.setattr(sync_router, "fetch_critical_state", fake_fetch)
@@ -365,6 +380,9 @@ def test_direct_supabase_sync_sanitizes_sensitive_state(monkeypatch):
     monkeypatch.setattr(sync_router, "sync_critical_state", fake_sync)
     monkeypatch.setattr(sync_router, "record_audit", fake_audit)
     monkeypatch.setattr(sync_router, "database_counts", fake_counts)
+    monkeypatch.setattr(sync_router, "get_sync_revision", fake_revision)
+    monkeypatch.setattr(sync_router, "fetch_sync_tombstones", fake_tombstones)
+    monkeypatch.setattr(sync_router, "sync_advisory_lock", fake_lock)
 
     request = make_json_request(
         {

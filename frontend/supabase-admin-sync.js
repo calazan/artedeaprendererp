@@ -34,7 +34,16 @@
     const LAST_SYNC_KEY = "arteDeAprenderERP.supabase.lastSyncAt";
     const CLIENT_KEY = "arteDeAprenderERP.supabase.clientId";
     const PENDING_KEY = "arteDeAprenderERP.supabase.pendingPush.v1";
+    const BASE_STATE_KEY = "arteDeAprenderERP.supabase.baseState.v3";
+    const BASE_REVISION_KEY = "arteDeAprenderERP.supabase.baseRevision.v3";
+    const PROTOCOL_VERSION = 2;
     const KEEPALIVE_MAX_BYTES = 60 * 1024;
+    const LIST_RESOURCES = [
+      "students", "activityCatalog", "extraEvents", "extraParticipants", "payments",
+      "otherIncomes", "expenses", "proposals", "expenseCategories", "agendaEvents",
+      "bankAccounts", "bankMovements", "paymentExclusions",
+    ];
+    const OBJECT_RESOURCES = ["rentalManagement", "settings"];
     const PUSH_DELAY_MS = 1400;
     const PUSH_RETRY_MS = 6000;
     const PULL_INTERVAL_MS = 15_000;
@@ -49,6 +58,8 @@
     let localRevision = Number(readJSON(PENDING_KEY, {})?.revision || 0);
     let pendingPush = readJSON(PENDING_KEY, {})?.pending === true;
     let retryPush = false;
+    let baseState = readJSON(BASE_STATE_KEY, null);
+    let baseRevision = Number(localStorage.getItem(BASE_REVISION_KEY) || 0);
 
     function clone(value) {
       try { return structuredClone(value); } catch { return JSON.parse(JSON.stringify(value)); }
@@ -155,6 +166,194 @@
       return JSON.stringify(payload);
     }
 
+    function businessClone(value) {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+      const result = {};
+      Object.entries(value).forEach(([key, item]) => {
+        if (key === "updatedAt" || key.startsWith("_")) return;
+        result[key] = clone(item);
+      });
+      return result;
+    }
+
+    function stableValue(value) {
+      if (Array.isArray(value)) return value.map(stableValue);
+      if (!value || typeof value !== "object") return value;
+      return Object.fromEntries(
+        Object.keys(value).sort().map((key) => [key, stableValue(value[key])]),
+      );
+    }
+
+    function sameBusinessValue(first, second) {
+      return JSON.stringify(stableValue(businessClone(first)))
+        === JSON.stringify(stableValue(businessClone(second)));
+    }
+
+    function changedFields(base = {}, value = {}) {
+      const a = businessClone(base);
+      const b = businessClone(value);
+      const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
+      return [...keys].filter(
+        (key) => JSON.stringify(stableValue(a[key])) !== JSON.stringify(stableValue(b[key])),
+      );
+    }
+
+    function mapById(items = []) {
+      const result = new Map();
+      (Array.isArray(items) ? items : []).forEach((item) => {
+        const id = String(item?.id || "");
+        if (id) result.set(id, clone(item));
+      });
+      return result;
+    }
+
+    function persistBase(remote, revision) {
+      baseState = clone(remote && typeof remote === "object" ? remote : {});
+      baseRevision = Number(revision || 0);
+      writeJSON(BASE_STATE_KEY, baseState);
+      try { localStorage.setItem(BASE_REVISION_KEY, String(baseRevision)); } catch {}
+    }
+
+    function buildChanges(base = {}, local = {}) {
+      const changes = {};
+      const changedAt = new Date().toISOString();
+
+      LIST_RESOURCES.forEach((resource) => {
+        const baseItems = mapById(base?.[resource]);
+        const localItems = mapById(local?.[resource]);
+        const upserts = [];
+        const tombstones = [];
+
+        localItems.forEach((item, id) => {
+          const previous = baseItems.get(id);
+          if (!previous || !sameBusinessValue(previous, item)) {
+            upserts.push({
+              id,
+              base: previous || {},
+              baseUpdatedAt: String(previous?.updatedAt || ""),
+              value: { ...clone(item), updatedAt: changedAt },
+            });
+          }
+        });
+
+        baseItems.forEach((item, id) => {
+          if (!localItems.has(id)) {
+            tombstones.push({
+              id,
+              base: clone(item),
+              baseUpdatedAt: String(item?.updatedAt || ""),
+              deletedAt: changedAt,
+            });
+          }
+        });
+
+        if (upserts.length || tombstones.length) {
+          changes[resource] = { upserts, tombstones };
+        }
+      });
+
+      OBJECT_RESOURCES.forEach((resource) => {
+        const previous = base?.[resource] && typeof base[resource] === "object" ? base[resource] : {};
+        const current = local?.[resource] && typeof local[resource] === "object" ? local[resource] : {};
+        if (!sameBusinessValue(previous, current)) {
+          changes[resource] = {
+            upserts: [{
+              id: "default",
+              base: clone(previous),
+              value: clone(current),
+            }],
+            tombstones: [],
+          };
+        }
+      });
+
+      return changes;
+    }
+
+    function hasChanges(changes = {}) {
+      return Object.values(changes).some((entry) => (
+        (Array.isArray(entry?.upserts) && entry.upserts.length)
+        || (Array.isArray(entry?.tombstones) && entry.tombstones.length)
+      ));
+    }
+
+    function applyFieldIntent(remoteItem, change) {
+      const base = change?.base && typeof change.base === "object" ? change.base : {};
+      const local = change?.value && typeof change.value === "object" ? change.value : {};
+      const remote = remoteItem && typeof remoteItem === "object" ? clone(remoteItem) : null;
+      if (!remote) return clone(local);
+
+      const result = clone(remote);
+      changedFields(base, local).forEach((field) => {
+        if (Object.prototype.hasOwnProperty.call(local, field)) result[field] = clone(local[field]);
+        else delete result[field];
+      });
+      if (local.id) result.id = local.id;
+      result.updatedAt = local.updatedAt || new Date().toISOString();
+      return result;
+    }
+
+    function reapplyLocalChanges(remote = {}, changes = {}, localAttendance = {}) {
+      const result = clone(remote && typeof remote === "object" ? remote : {});
+
+      LIST_RESOURCES.forEach((resource) => {
+        const index = mapById(result[resource]);
+        const entry = changes?.[resource] || {};
+        (Array.isArray(entry.upserts) ? entry.upserts : []).forEach((change) => {
+          const id = String(change?.id || change?.value?.id || "");
+          if (!id) return;
+          index.set(id, applyFieldIntent(index.get(id), change));
+        });
+        (Array.isArray(entry.tombstones) ? entry.tombstones : []).forEach((change) => {
+          const id = String(change?.id || "");
+          if (id) index.delete(id);
+        });
+        result[resource] = [...index.values()];
+      });
+
+      OBJECT_RESOURCES.forEach((resource) => {
+        const change = changes?.[resource]?.upserts?.slice?.(-1)?.[0];
+        if (!change) return;
+        result[resource] = applyFieldIntent(result[resource] || {}, change);
+        delete result[resource].id;
+        delete result[resource].updatedAt;
+      });
+
+      result.attendance = mergeAttendance(result.attendance || {}, localAttendance || {});
+      return result;
+    }
+
+    function localSecuritySettings() {
+      return {
+        password: state.settings?.password || "",
+        passwordHash: state.settings?.passwordHash || "",
+        passwordEnabled: state.settings?.passwordEnabled !== false,
+        passwordSecurityVersion: state.settings?.passwordSecurityVersion || "4.6.3",
+        remoteSync: clone(state.settings?.remoteSync || {}),
+      };
+    }
+
+    function applyRemoteState(remote, revision, extraChanges = null, attendance = null) {
+      let canonical = clone(remote && typeof remote === "object" ? remote : {});
+      if (extraChanges && hasChanges(extraChanges)) {
+        canonical = reapplyLocalChanges(canonical, extraChanges, attendance || state.attendance || {});
+      }
+      const security = localSecuritySettings();
+      state = normalizeState({
+        ...state,
+        ...canonical,
+        settings: {
+          ...(state.settings || {}),
+          ...(canonical.settings || {}),
+          ...security,
+        },
+      });
+      originalFlushSaveState({ skipRemote: true, skipMarkLocal: true });
+      renderAll();
+      persistBase(remote || {}, revision);
+      return criticalState();
+    }
+
     function setSupabaseStatus(message, tone = "") {
       const box = document.querySelector("#supabaseSyncStatus");
       if (box) {
@@ -239,11 +438,14 @@
     }
 
     function syncEnvelope(payload = criticalState()) {
+      const changes = buildChanges(baseState || {}, payload);
       return {
-        state: payload,
-        deleted: deletedSinceLast(payload),
+        protocolVersion: PROTOCOL_VERSION,
+        baseRevision,
+        changes,
+        attendance: clone(payload.attendance || {}),
         clientId: clientId(),
-        source: "saber-mais-admin",
+        source: "saber-mais-admin-v2",
       };
     }
 
@@ -253,6 +455,7 @@
       const key = syncKey();
       if (key.length < 6) return false;
 
+      if (!baseState) return false;
       const body = JSON.stringify(syncEnvelope());
       const size = new TextEncoder().encode(body).byteLength;
       if (size > KEEPALIVE_MAX_BYTES) return false;
@@ -277,6 +480,69 @@
       }
     }
 
+    function mergeLegacyPendingState(remote = {}, local = {}) {
+      const result = { ...clone(remote), ...clone(local) };
+      LIST_RESOURCES.forEach((resource) => {
+        result[resource] = mergeById(remote?.[resource], local?.[resource], []);
+      });
+      result.attendance = mergeAttendance(remote.attendance || {}, local.attendance || {});
+      OBJECT_RESOURCES.forEach((resource) => {
+        result[resource] = {
+          ...(remote?.[resource] || {}),
+          ...(local?.[resource] || {}),
+        };
+      });
+      return result;
+    }
+
+    async function seedBaseFromServer(key) {
+      const local = criticalState();
+      const result = await request(SYNC_ENDPOINT, {
+        method: "GET",
+        headers: { "x-sync-key": key },
+      });
+      const remote = result.data || {};
+      persistBase(remote, result.revision || 0);
+
+      // Migração segura da versão anterior: mantém a intenção local, mas nunca
+      // transforma um registro existente apenas no servidor em exclusão.
+      const rebased = mergeLegacyPendingState(remote, local);
+      const security = localSecuritySettings();
+      state = normalizeState({
+        ...state,
+        ...rebased,
+        settings: {
+          ...(state.settings || {}),
+          ...(rebased.settings || {}),
+          ...security,
+        },
+      });
+      originalFlushSaveState({ skipRemote: true, skipMarkLocal: true });
+      renderAll();
+      return result;
+    }
+
+    async function rebaseConflict(error, submittedChanges, submittedAttendance) {
+      const remote = error?.data?.data || {};
+      const revision = Number(error?.data?.revision || 0);
+      persistBase(remote, revision);
+      const rebased = reapplyLocalChanges(remote, submittedChanges, submittedAttendance);
+      const security = localSecuritySettings();
+      state = normalizeState({
+        ...state,
+        ...rebased,
+        settings: {
+          ...(state.settings || {}),
+          ...(rebased.settings || {}),
+          ...security,
+        },
+      });
+      originalFlushSaveState({ skipRemote: true, skipMarkLocal: true });
+      renderAll();
+      persistPendingPush();
+      return true;
+    }
+
     async function syncNow(options = {}) {
       if (busy) {
         persistPendingPush();
@@ -290,53 +556,94 @@
         return false;
       }
 
+      if (!baseState) {
+        try {
+          await seedBaseFromServer(key);
+        } catch (error) {
+          persistPendingPush();
+          retryPush = true;
+          setSupabaseStatus(`Não consegui preparar a base de sincronização: ${error.message || "erro desconhecido"}`, "error");
+          return false;
+        }
+      }
+
       const payload = criticalState();
+      const submittedChanges = buildChanges(baseState || {}, payload);
+      const submittedAttendance = clone(payload.attendance || {});
       const nextFingerprint = fingerprint(payload);
-      if (!options.force && !pendingPush && nextFingerprint === lastFingerprint) return true;
+      if (!options.force && !pendingPush && !hasChanges(submittedChanges) && nextFingerprint === lastFingerprint) return true;
 
       const revisionAtStart = localRevision;
       busy = true;
-      setSupabaseStatus("Enviando alterações para o Supabase...", "working");
+      setSupabaseStatus("Enviando alterações para o banco...", "working");
       try {
         const result = await request(SYNC_ENDPOINT, {
           method: "POST",
           headers: { "x-sync-key": key },
-          body: JSON.stringify(syncEnvelope(payload)),
+          body: JSON.stringify({
+            protocolVersion: PROTOCOL_VERSION,
+            baseRevision,
+            changes: submittedChanges,
+            attendance: submittedAttendance,
+            clientId: clientId(),
+            source: "saber-mais-admin-v2",
+          }),
         });
-        writeJSON(SNAPSHOT_KEY, idsSnapshot(payload));
+
+        const latest = criticalState();
+        const laterChanges = localRevision !== revisionAtStart
+          ? buildChanges(payload, latest)
+          : {};
+        const laterAttendance = localRevision !== revisionAtStart
+          ? clone(latest.attendance || {})
+          : null;
+
+        const applied = applyRemoteState(
+          result.data || {},
+          result.revision || baseRevision,
+          laterChanges,
+          laterAttendance,
+        );
+        writeJSON(SNAPSHOT_KEY, idsSnapshot(applied));
         localStorage.setItem(LAST_SYNC_KEY, result.updatedAt || new Date().toISOString());
-        lastFingerprint = nextFingerprint;
+        lastFingerprint = fingerprint(applied);
         ready = true;
         retryPush = false;
-        pendingPush = localRevision !== revisionAtStart;
+        pendingPush = localRevision !== revisionAtStart && (
+          hasChanges(laterChanges)
+          || JSON.stringify(laterAttendance || {}) !== JSON.stringify(payload.attendance || {})
+        );
         if (pendingPush) persistPendingPush();
         else clearPendingPush();
         stopBlobLoops();
         setSupabaseStatus(
           pendingPush
-            ? "Primeira alteração enviada; há uma edição mais recente aguardando sincronização."
-            : `Sincronizado em ${new Date(result.updatedAt || Date.now()).toLocaleString("pt-BR")}.`,
+            ? "Alteração confirmada; há uma edição mais recente aguardando envio."
+            : `Sincronizado na revisão ${Number(result.revision || baseRevision)}.`,
           pendingPush ? "working" : "ok",
         );
-        if (options.manual) showToast(pendingPush ? "Há uma alteração mais recente aguardando envio." : "Dados enviados ao Supabase.");
+        if (options.manual) showToast(pendingPush ? "Há uma alteração mais recente aguardando envio." : "Dados sincronizados.");
         return true;
       } catch (error) {
-        if (error.status === 409 && error.code === "REMOTE_CONFLICT" && !options.conflictRetry) {
+        if (
+          error.status === 409
+          && ["MERGE_CONFLICT", "REMOTE_CONFLICT"].includes(error.code)
+          && !options.conflictRetry
+          && error.data?.data
+        ) {
           try {
-            const merged = await mergeRemoteConflict(key);
-            if (merged) {
-              busy = false;
-              return await syncNow({ ...options, force: true, conflictRetry: true });
-            }
+            await rebaseConflict(error, submittedChanges, submittedAttendance);
+            busy = false;
+            return await syncNow({ ...options, force: true, conflictRetry: true });
           } catch (conflictError) {
-            console.error("Falha ao reconciliar conflito de sincronização", conflictError);
+            console.error("Falha ao reaplicar alterações após conflito", conflictError);
           }
         }
         persistPendingPush();
         retryPush = true;
-        console.error("Falha ao sincronizar Supabase", error);
+        console.error("Falha ao sincronizar banco", error);
         setSupabaseStatus(`Falha: ${error.message || "erro desconhecido"}. Alteração local preservada.`, "error");
-        if (options.manual) showToast("Não consegui enviar ao Supabase. A alteração local foi preservada.");
+        if (options.manual) showToast("Não consegui sincronizar. A alteração local foi preservada.");
         return false;
       } finally {
         busy = false;
@@ -443,21 +750,20 @@
       if (key.length < 6) return false;
       if (pendingPush) {
         setSupabaseStatus("Há uma alteração local aguardando envio; atualização remota adiada.", "working");
-        if (options.manual) showToast("Envie as alterações locais antes de baixar do Supabase.");
+        if (options.manual) showToast("Sincronize as alterações locais antes de baixar do banco.");
         queuePush();
         return false;
       }
 
       const revisionAtStart = localRevision;
       busy = true;
-      setSupabaseStatus("Baixando dados do Supabase...", "working");
+      setSupabaseStatus("Baixando dados do banco...", "working");
       try {
         const result = await request(SYNC_ENDPOINT, {
           method: "GET",
           headers: { "x-sync-key": key },
         });
 
-        // Se o usuário salvou enquanto o GET estava em andamento, não aplique o snapshot antigo.
         if (pendingPush || localRevision !== revisionAtStart) {
           persistPendingPush();
           setSupabaseStatus("Alteração local detectada durante a atualização; dados remotos não foram aplicados.", "working");
@@ -468,43 +774,21 @@
         const remote = result.data || {};
         if (!hasRemoteData(remote) && !options.force) return false;
 
-        const localSecurity = {
-          password: state.settings?.password || "",
-          passwordHash: state.settings?.passwordHash || "",
-          passwordEnabled: state.settings?.passwordEnabled !== false,
-          passwordSecurityVersion: state.settings?.passwordSecurityVersion || "4.6.3",
-          remoteSync: clone(state.settings?.remoteSync || {}),
-        };
-        const mergedAttendance = mergeAttendance(remote.attendance || {}, state.attendance || {});
-        const mergedInput = {
-          ...state,
-          ...remote,
-          attendance: mergedAttendance,
-          settings: {
-            ...(state.settings || {}),
-            ...(remote.settings || {}),
-            ...localSecurity,
-          },
-        };
-
-        state = normalizeState(mergedInput);
-        originalFlushSaveState({ skipRemote: true, skipMarkLocal: true });
-        renderAll();
-
-        const payload = criticalState();
-        lastFingerprint = fingerprint(payload);
-        writeJSON(SNAPSHOT_KEY, idsSnapshot(payload));
+        const applied = applyRemoteState(remote, result.revision || 0);
+        lastFingerprint = fingerprint(applied);
+        writeJSON(SNAPSHOT_KEY, idsSnapshot(applied));
         localStorage.setItem(LAST_SYNC_KEY, remote.updatedAt || result.updatedAt || new Date().toISOString());
         ready = true;
         retryPush = false;
+        clearPendingPush();
         stopBlobLoops();
-        setSupabaseStatus(`Dados atualizados em ${new Date(remote.updatedAt || result.updatedAt || Date.now()).toLocaleString("pt-BR")}.`, "ok");
-        if (options.manual) showToast("Dados do Supabase aplicados.");
+        setSupabaseStatus(`Dados atualizados na revisão ${Number(result.revision || 0)}.`, "ok");
+        if (options.manual) showToast("Dados do banco aplicados.");
         return true;
       } catch (error) {
-        console.error("Falha ao baixar Supabase", error);
+        console.error("Falha ao baixar dados", error);
         setSupabaseStatus(`Falha: ${error.message || "erro desconhecido"}`, "error");
-        if (options.manual) showToast("Não consegui baixar do Supabase.");
+        if (options.manual) showToast("Não consegui baixar os dados.");
         return false;
       } finally {
         busy = false;
@@ -521,24 +805,34 @@
         if (!ready) throw new Error("As tabelas ainda não foram preparadas.");
         stopBlobLoops();
 
-        const counts = health.counts || {};
-        const total = Number(counts.students || 0)
-          + Number(counts.activities || 0)
-          + Number(counts.events || 0)
-          + Number(counts.participants || 0)
-          + Number(counts.payments || 0);
         const local = criticalState();
         const localHasData = hasRemoteData(local);
 
         if (pendingPush) {
+          if (!baseState) await seedBaseFromServer(syncKey());
           await syncNow({ force: true, recovery: true });
-        } else if (total === 0 && localHasData) {
-          pendingPush = true;
-          await syncNow({ force: true });
-        } else if (total > 0) {
-          await pullNow({ force: true });
         } else {
-          setSupabaseStatus("Conectado. O banco está vazio e aguardando os primeiros cadastros.", "ok");
+          const remoteResult = await request(SYNC_ENDPOINT, {
+            method: "GET",
+            headers: { "x-sync-key": syncKey() },
+          });
+          const remote = remoteResult.data || {};
+          const remoteHasData = hasRemoteData(remote)
+            || Object.keys(remote.attendance || {}).length > 0;
+          persistBase(remote, remoteResult.revision || 0);
+
+          if (remoteHasData) {
+            const applied = applyRemoteState(remote, remoteResult.revision || 0);
+            lastFingerprint = fingerprint(applied);
+            writeJSON(SNAPSHOT_KEY, idsSnapshot(applied));
+            clearPendingPush();
+            setSupabaseStatus(`Dados atualizados na revisão ${Number(remoteResult.revision || 0)}.`, "ok");
+          } else if (localHasData) {
+            persistPendingPush();
+            await syncNow({ force: true });
+          } else {
+            setSupabaseStatus("Conectado. O banco está vazio e aguardando os primeiros cadastros.", "ok");
+          }
         }
 
         clearInterval(pullTimer);
@@ -579,6 +873,8 @@
         localRevision,
         lastSyncAt: localStorage.getItem(LAST_SYNC_KEY) || "",
         pendingSince: readJSON(PENDING_KEY, {})?.updatedAt || "",
+        baseRevision,
+        protocolVersion: PROTOCOL_VERSION,
       }),
     };
 

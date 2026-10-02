@@ -12,7 +12,7 @@ from psycopg.types.json import Jsonb
 from .db import connection
 from .utils import as_dict, as_list, iso_now, iso_value, jsonable
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 ATTENDANCE_EPOCH = "1970-01-01T00:00:00Z"
 _schema_ready = False
 
@@ -67,6 +67,17 @@ CREATE TABLE IF NOT EXISTS public.smg_meta (
   value jsonb NOT NULL DEFAULT '{}'::jsonb,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
+CREATE TABLE IF NOT EXISTS public.smg_sync_tombstones (
+  resource_type text NOT NULL,
+  record_id text NOT NULL,
+  deleted_at timestamptz NOT NULL DEFAULT now(),
+  base_updated_at timestamptz,
+  revision bigint NOT NULL DEFAULT 0,
+  client_id text NOT NULL DEFAULT '',
+  PRIMARY KEY(resource_type, record_id)
+);
+CREATE INDEX IF NOT EXISTS smg_sync_tombstones_revision_idx
+  ON public.smg_sync_tombstones(revision DESC);
 ALTER TABLE public.smg_students ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.smg_activities ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.smg_payments ENABLE ROW LEVEL SECURITY;
@@ -74,6 +85,7 @@ ALTER TABLE public.smg_extra_events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.smg_extra_participants ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.smg_attendance ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.smg_meta ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.smg_sync_tombstones ENABLE ROW LEVEL SECURITY;
 """
 
 
@@ -93,6 +105,14 @@ async def ensure_core_schema() -> None:
                 """,
                 (Jsonb({"version": SCHEMA_VERSION}),),
             )
+            await cur.execute(
+                """
+                INSERT INTO public.smg_meta(key, value, updated_at)
+                VALUES ('sync_revision', %s, now())
+                ON CONFLICT (key) DO NOTHING
+                """,
+                (Jsonb({"revision": 0}),),
+            )
     _schema_ready = True
 
 
@@ -111,6 +131,45 @@ def parse_attendance_timestamp(value: Any, *, fallback: str = ATTENDANCE_EPOCH) 
 
 def format_attendance_timestamp(value: Any, *, fallback: str = ATTENDANCE_EPOCH) -> str:
     return parse_attendance_timestamp(value, fallback=fallback).isoformat().replace("+00:00", "Z")
+
+
+def with_item_updated_at(value: Any, fallback: Any) -> dict:
+    item = copy.deepcopy(as_dict(value))
+    if not str(item.get("updatedAt") or "").strip():
+        item["updatedAt"] = iso_value(fallback)
+    return item
+
+
+async def get_sync_revision() -> int:
+    await ensure_core_schema()
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute("SELECT value FROM public.smg_meta WHERE key='sync_revision' LIMIT 1")
+            row = await cur.fetchone()
+    return int(as_dict(row[0] if row else {}).get("revision") or 0)
+
+
+async def fetch_sync_tombstones() -> dict:
+    await ensure_core_schema()
+    async with connection() as conn:
+        async with conn.cursor() as cur:
+            await cur.execute(
+                """
+                SELECT resource_type, record_id, deleted_at, base_updated_at, revision, client_id
+                FROM public.smg_sync_tombstones
+                ORDER BY resource_type, record_id
+                """
+            )
+            rows = await cur.fetchall()
+    result: dict[str, dict] = {}
+    for resource, record_id, deleted_at, base_updated_at, revision, client_id in rows:
+        result.setdefault(str(resource), {})[str(record_id)] = {
+            "deletedAt": iso_value(deleted_at),
+            "baseUpdatedAt": iso_value(base_updated_at),
+            "revision": int(revision or 0),
+            "clientId": str(client_id or ""),
+        }
+    return result
 
 
 def normalize_attendance_record(record: Any, *, fallback_updated_at: str = ATTENDANCE_EPOCH) -> dict:
@@ -279,6 +338,9 @@ async def sync_critical_state(payload: dict) -> dict:
     await ensure_core_schema()
     state = as_dict(payload.get("state"))
     deleted = as_dict(payload.get("deleted"))
+    tombstones = as_list(payload.get("tombstones"))
+    clear_tombstones = as_list(payload.get("clearTombstones"))
+    sync_revision = int(payload.get("syncRevision") or 0)
     now = iso_now()
 
     students = [
@@ -356,6 +418,54 @@ async def sync_critical_state(payload: dict) -> dict:
                 await _delete_ids(cur, "smg_extra_events", as_list(deleted.get("extraEvents")))
                 await _delete_ids(cur, "smg_extra_participants", as_list(deleted.get("extraParticipants")))
 
+                for entry in clear_tombstones:
+                    resource = str(as_dict(entry).get("resource") or "").strip()
+                    record_id = str(as_dict(entry).get("id") or "").strip()
+                    if resource and record_id:
+                        await cur.execute(
+                            "DELETE FROM public.smg_sync_tombstones WHERE resource_type=%s AND record_id=%s",
+                            (resource, record_id),
+                        )
+
+                if tombstones:
+                    await cur.executemany(
+                        """
+                        INSERT INTO public.smg_sync_tombstones
+                          (resource_type,record_id,deleted_at,base_updated_at,revision,client_id)
+                        VALUES (%s,%s,%s::timestamptz,NULLIF(%s,'')::timestamptz,%s,%s)
+                        ON CONFLICT(resource_type,record_id) DO UPDATE SET
+                          deleted_at=EXCLUDED.deleted_at,
+                          base_updated_at=EXCLUDED.base_updated_at,
+                          revision=EXCLUDED.revision,
+                          client_id=EXCLUDED.client_id
+                        WHERE public.smg_sync_tombstones.revision <= EXCLUDED.revision
+                        """,
+                        [
+                            (
+                                str(as_dict(entry).get("resource") or ""),
+                                str(as_dict(entry).get("id") or ""),
+                                str(as_dict(entry).get("deletedAt") or now),
+                                str(as_dict(entry).get("baseUpdatedAt") or ""),
+                                sync_revision,
+                                str(as_dict(entry).get("clientId") or payload.get("clientId") or ""),
+                            )
+                            for entry in tombstones
+                            if str(as_dict(entry).get("resource") or "").strip()
+                            and str(as_dict(entry).get("id") or "").strip()
+                        ],
+                    )
+
+                if sync_revision:
+                    await cur.execute(
+                        """
+                        INSERT INTO public.smg_meta(key,value,updated_at)
+                        VALUES ('sync_revision',%s,now())
+                        ON CONFLICT (key) DO UPDATE
+                        SET value=EXCLUDED.value,updated_at=now()
+                        """,
+                        (Jsonb({"revision": sync_revision}),),
+                    )
+
                 await cur.execute(
                     """
                     INSERT INTO public.smg_meta(key, value, updated_at)
@@ -378,6 +488,7 @@ async def sync_critical_state(payload: dict) -> dict:
                                 "updatedAt": now,
                                 "clientId": str(payload.get("clientId") or ""),
                                 "source": str(payload.get("source") or "admin-app"),
+                                "revision": sync_revision,
                             }
                         ),
                     ),
@@ -386,31 +497,35 @@ async def sync_critical_state(payload: dict) -> dict:
     # coleção complementar em registros independentes e versionados.
     from .domains import migrate_supplemental_state
     domain_result = await migrate_supplemental_state(state)
-    return {"updatedAt": now, "domainRecords": domain_result["migrated"]}
+    return {
+        "updatedAt": now,
+        "domainRecords": domain_result["migrated"],
+        "revision": sync_revision,
+    }
 
 
 async def fetch_critical_state() -> dict:
     await ensure_core_schema()
     async with connection() as conn:
         async with conn.cursor() as cur:
-            await cur.execute("SELECT data FROM public.smg_students ORDER BY lower(COALESCE(data->>'name',''))")
-            students = [row[0] or {} for row in await cur.fetchall()]
+            await cur.execute("SELECT data,updated_at FROM public.smg_students ORDER BY lower(COALESCE(data->>'name',''))")
+            students = [with_item_updated_at(row[0], row[1]) for row in await cur.fetchall()]
 
-            await cur.execute("SELECT data FROM public.smg_activities ORDER BY lower(COALESCE(data->>'name',''))")
-            activities = [row[0] or {} for row in await cur.fetchall()]
-
-            await cur.execute(
-                "SELECT data FROM public.smg_extra_events ORDER BY COALESCE(data->>'startDate',''), lower(COALESCE(data->>'name',''))"
-            )
-            events = [row[0] or {} for row in await cur.fetchall()]
-
-            await cur.execute("SELECT data FROM public.smg_extra_participants ORDER BY lower(COALESCE(data->>'name',''))")
-            participants = [row[0] or {} for row in await cur.fetchall()]
+            await cur.execute("SELECT data,updated_at FROM public.smg_activities ORDER BY lower(COALESCE(data->>'name',''))")
+            activities = [with_item_updated_at(row[0], row[1]) for row in await cur.fetchall()]
 
             await cur.execute(
-                "SELECT data FROM public.smg_payments WHERE deleted_at IS NULL ORDER BY period, student_id, id"
+                "SELECT data,updated_at FROM public.smg_extra_events ORDER BY COALESCE(data->>'startDate',''), lower(COALESCE(data->>'name',''))"
             )
-            payments = [row[0] or {} for row in await cur.fetchall()]
+            events = [with_item_updated_at(row[0], row[1]) for row in await cur.fetchall()]
+
+            await cur.execute("SELECT data,updated_at FROM public.smg_extra_participants ORDER BY lower(COALESCE(data->>'name',''))")
+            participants = [with_item_updated_at(row[0], row[1]) for row in await cur.fetchall()]
+
+            await cur.execute(
+                "SELECT data,updated_at FROM public.smg_payments WHERE deleted_at IS NULL ORDER BY period, student_id, id"
+            )
+            payments = [with_item_updated_at(row[0], row[1]) for row in await cur.fetchall()]
 
             await cur.execute(
                 "SELECT attendance_date::text, student_id, record FROM public.smg_attendance ORDER BY attendance_date, student_id"
@@ -428,6 +543,15 @@ async def fetch_critical_state() -> dict:
         attendance.setdefault(str(day), {})[str(student_id)] = normalize_attendance_record(record or {})
 
     result = dict((supplemental[0] if supplemental else {}) or {})
+    supplemental_updated_at = supplemental[1] if supplemental else None
+    for key, value in list(result.items()):
+        if isinstance(value, list):
+            result[key] = [
+                with_item_updated_at(item, supplemental_updated_at)
+                if isinstance(item, dict) and item.get("id")
+                else item
+                for item in value
+            ]
     result.update(
         {
             "students": students,
