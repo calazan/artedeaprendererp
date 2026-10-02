@@ -480,12 +480,45 @@
       }
     }
 
+    function mergeLegacyPendingState(remote = {}, local = {}) {
+      const result = { ...clone(remote), ...clone(local) };
+      LIST_RESOURCES.forEach((resource) => {
+        result[resource] = mergeById(remote?.[resource], local?.[resource], []);
+      });
+      result.attendance = mergeAttendance(remote.attendance || {}, local.attendance || {});
+      OBJECT_RESOURCES.forEach((resource) => {
+        result[resource] = {
+          ...(remote?.[resource] || {}),
+          ...(local?.[resource] || {}),
+        };
+      });
+      return result;
+    }
+
     async function seedBaseFromServer(key) {
+      const local = criticalState();
       const result = await request(SYNC_ENDPOINT, {
         method: "GET",
         headers: { "x-sync-key": key },
       });
-      persistBase(result.data || {}, result.revision || 0);
+      const remote = result.data || {};
+      persistBase(remote, result.revision || 0);
+
+      // Migração segura da versão anterior: mantém a intenção local, mas nunca
+      // transforma um registro existente apenas no servidor em exclusão.
+      const rebased = mergeLegacyPendingState(remote, local);
+      const security = localSecuritySettings();
+      state = normalizeState({
+        ...state,
+        ...rebased,
+        settings: {
+          ...(state.settings || {}),
+          ...(rebased.settings || {}),
+          ...security,
+        },
+      });
+      originalFlushSaveState({ skipRemote: true, skipMarkLocal: true });
+      renderAll();
       return result;
     }
 
