@@ -15,7 +15,9 @@ def test_auth_bridge_cleans_prefixed_storage_on_logout_and_401():
     assert 'const STORAGE_PREFIX = "arteDeAprenderERP."' in source
     assert "response.status === 401" in source
     assert "caches.keys()" in source
-    assert "storage.removeItem(key)" in source
+    assert "nativeStorage.removeItem.call(storage, key)" in source
+    assert "volatileLocal.clear()" in source
+    assert "volatileSession.clear()" in source
 
 
 def test_service_worker_never_precaches_authenticated_html():
