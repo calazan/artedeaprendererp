@@ -271,7 +271,12 @@ async def compatibility_sync(request: Request):
         current = await fetch_critical_state(
             attendance_since=attendance_since if request.method == "GET" else None
         )
-        current_etag = state_etag(current)
+        etag_state = (
+            current
+            if request.method == "GET"
+            else window_attendance_state(current, attendance_since)
+        )
+        current_etag = state_etag(etag_state)
 
         if request.method == "GET":
             client_etag = str(
@@ -504,6 +509,7 @@ async def direct_supabase_sync(request: Request):
                             "revision": revision,
                             "data": window_attendance_state(current, attendance_since),
                             "tombstones": tombstones,
+                            "attendanceSince": attendance_since,
                             "counts": await database_counts(),
                         }
                     )
@@ -560,8 +566,9 @@ async def direct_supabase_sync(request: Request):
                         "code": "REMOTE_CONFLICT",
                         "error": "O snapshot legado tenta restaurar registros excluídos em uma revisão mais recente.",
                         "revision": revision,
-                        "data": current,
+                        "data": window_attendance_state(current, attendance_since),
                         "tombstones": tombstones,
+                        "attendanceSince": attendance_since,
                         "conflicts": conflicts,
                     },
                     409,
