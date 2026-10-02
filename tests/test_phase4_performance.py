@@ -16,6 +16,7 @@ from starlette.requests import Request
 import smg.domains as domains
 import smg.state as state
 from smg import db
+from smg.routers import attendance as attendance_router
 from smg.routers import health as health_router
 from smg.routers import sync as sync_router
 
@@ -647,3 +648,90 @@ def test_protocol_v2_attendance_delta_does_not_rewrite_untouched_history(monkeyp
             domains._schema_ready = False
 
     asyncio.run(scenario())
+
+
+def test_teacher_attendance_post_refetches_windowed_state(monkeypatch):
+    calls = {"fetch": [], "saved": None}
+
+    before = {
+        "updatedAt": "2026-10-02T10:00:00Z",
+        "students": [{"id": "s1", "name": "Ana", "status": "active"}],
+        "activityCatalog": [],
+        "extraEvents": [],
+        "extraParticipants": [],
+        "attendance": {},
+    }
+    after = {
+        **before,
+        "updatedAt": "2026-10-02T10:01:00Z",
+        "attendance": {
+            "2026-10-02": {
+                "s1": {
+                    "status": "present",
+                    "updatedAt": "2026-10-02T10:01:00Z",
+                }
+            }
+        },
+    }
+
+    async def fake_fetch(*, attendance_since=None):
+        calls["fetch"].append(attendance_since)
+        return before if len(calls["fetch"]) == 1 else after
+
+    async def fake_save(day, records):
+        calls["saved"] = (day, records)
+        return {"updatedAt": "2026-10-02T10:01:00Z"}
+
+    async def fake_audit(*args, **kwargs):
+        return None
+
+    monkeypatch.setattr(attendance_router, "role_authorized", lambda request, roles: True)
+    monkeypatch.setattr(attendance_router, "database_configured", lambda: True)
+    monkeypatch.setattr(attendance_router, "database_provider", lambda: "neon-postgres")
+    monkeypatch.setattr(attendance_router, "fetch_critical_state", fake_fetch)
+    monkeypatch.setattr(attendance_router, "save_attendance_records", fake_save)
+    monkeypatch.setattr(attendance_router, "record_audit", fake_audit)
+
+    body = json.dumps(
+        {
+            "date": "2026-10-02",
+            "records": {
+                "s1": {
+                    "status": "present",
+                    "updatedAt": "2026-10-02T10:01:00Z",
+                }
+            },
+        }
+    ).encode("utf-8")
+    sent = False
+
+    async def receive():
+        nonlocal sent
+        if sent:
+            return {"type": "http.request", "body": b"", "more_body": False}
+        sent = True
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    request = Request(
+        {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "https",
+            "path": "/api/teacher-attendance",
+            "raw_path": b"/api/teacher-attendance",
+            "query_string": b"attendanceSince=2026-09-01",
+            "headers": [],
+            "server": ("example.test", 443),
+            "client": ("127.0.0.1", 1234),
+        },
+        receive,
+    )
+
+    response = asyncio.run(attendance_router.handler(request))
+    payload = json.loads(response.body)
+    assert response.status_code == 200
+    assert calls["fetch"] == ["2026-09-01", "2026-09-01"]
+    assert calls["saved"][0] == "2026-10-02"
+    assert payload["attendanceSince"] == "2026-09-01"
+    assert payload["data"]["attendance"]["2026-10-02"]["s1"]["status"] == "present"
