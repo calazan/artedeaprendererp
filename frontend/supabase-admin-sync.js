@@ -521,12 +521,12 @@
       if (key.length < 6) return false;
 
       if (!baseState) return false;
-      const body = JSON.stringify(syncEnvelope());
+      const envelope = syncEnvelope();
+      const body = JSON.stringify(envelope);
       const size = new TextEncoder().encode(body).byteLength;
       if (size > KEEPALIVE_MAX_BYTES) return false;
 
       try {
-        const envelope = syncEnvelope();
         const pending = fetch(syncEndpointForAttendance(envelope.attendance), {
           method: "POST",
           cache: "no-store",
@@ -537,7 +537,7 @@
             "Content-Type": "application/json",
             "x-sync-key": key,
           },
-          body: JSON.stringify(envelope),
+          body,
         });
         pending?.catch?.(() => {});
         return true;
