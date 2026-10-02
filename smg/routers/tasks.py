@@ -308,7 +308,7 @@ async def tasks_handler(request: Request, *, force_push: bool = False):
             return await handle_dispatch(request)
 
         body = {} if request.method == "GET" else await read_body(request)
-        if not sync_authorized(request, body):
+        if not await sync_authorized(request, body):
             return response({"ok": False, "error": "Chave de sincronização inválida."}, 401)
 
         if mode == "push" or str(body.get("action") or "") in {"subscribe", "unsubscribe", "test"}:
