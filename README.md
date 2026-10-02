@@ -5,7 +5,7 @@ ERP para gestão de espaço de contraturno escolar, baseado na arquitetura do pr
 ## Estrutura
 - Backend Python / FastAPI
 - Frontend web empacotado no próprio repositório
-- Integração opcional com Supabase/PostgreSQL
+- Banco de dados Neon/PostgreSQL
 - Deploy compatível com Vercel
 
 ## Configuração

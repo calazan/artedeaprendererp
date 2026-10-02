@@ -26,14 +26,6 @@
       .toLowerCase();
   }
 
-  function syncKey() {
-    try {
-      return String(state?.settings?.remoteSync?.syncKey || document.querySelector("#remoteSyncKey")?.value || "").trim();
-    } catch {
-      return String(document.querySelector("#remoteSyncKey")?.value || "").trim();
-    }
-  }
-
   function toast(message) {
     try { showToast(message); } catch { alert(message); }
   }
@@ -200,14 +192,12 @@
   }
 
   async function request(method, body, query = "") {
-    const key = syncKey();
-    if (key.length < 6) throw new Error("A chave de sincronização não está preenchida neste aparelho.");
     const response = await fetch(`${ENDPOINT}${query}`, {
       method,
       cache: "no-store",
+      credentials: "same-origin",
       headers: {
         Accept: "application/json",
-        "x-sync-key": key,
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -481,7 +471,7 @@
       student = state.students.find((item) => item.id === studentId) || existingStudentFor(record.data || {});
     } catch {}
     if (!student) {
-      toast("O cadastro ainda não foi baixado para este aparelho. Atualize os dados do Supabase.");
+      toast("O cadastro ainda não foi baixado para este aparelho. Atualize os dados do Neon.");
       return;
     }
     try { fillStudentForm(student); } catch {
@@ -531,8 +521,7 @@
 
   function initialize() {
     mount();
-    const key = syncKey();
-    if (key.length >= 6) loadRecords(true).catch(() => {});
+    loadRecords(true).catch(() => {});
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", initialize, { once: true });

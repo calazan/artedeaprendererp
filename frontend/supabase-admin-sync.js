@@ -80,10 +80,6 @@
       return value;
     }
 
-    function syncKey() {
-      return String(state?.settings?.remoteSync?.syncKey || "").trim();
-    }
-
     function safeSettingsForSync() {
       const source = clone(state?.settings || {});
       delete source.password;
@@ -162,7 +158,7 @@
         <div class="remote-sync-status-box">
           <span>Status</span>
           <strong id="neonSyncStatus">Verificando conexão...</strong>
-          <small>Senhas e a chave de sincronização permanecem somente neste dispositivo.</small>
+          <small>A sincronização usa somente a sessão segura da conta conectada.</small>
         </div>
         <div class="form-actions">
           <button type="button" id="neonPushNow">Enviar dados atuais</button>
@@ -227,7 +223,6 @@
         pendingPush = true;
         return false;
       }
-      const key = syncKey();
       const payload = criticalState();
       const nextFingerprint = fingerprint(payload);
       if (!options.force && !pendingPush && nextFingerprint === lastFingerprint) return true;
@@ -239,7 +234,6 @@
         const deleted = deletedSinceLast(payload);
         const result = await request(SYNC_ENDPOINT, {
           method: "POST",
-          headers: key.length >= 32 ? { "x-sync-key": key } : {},
           body: JSON.stringify({
             state: payload,
             deleted,
@@ -306,7 +300,6 @@
 
     async function pullNow(options = {}) {
       if (busy) return false;
-      const key = syncKey();
       if (pendingPush) {
         setNeonStatus("Há uma alteração local aguardando envio; atualização remota adiada.", "working");
         if (options.manual) showToast("Aguarde o envio das alterações locais antes de atualizar.");
@@ -320,7 +313,6 @@
       try {
         const result = await request(SYNC_ENDPOINT, {
           method: "GET",
-          headers: key.length >= 32 ? { "x-sync-key": key } : {},
         });
 
         // Se o usuário salvou enquanto o GET estava em andamento, não aplique o snapshot antigo.

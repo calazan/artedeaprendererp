@@ -32,10 +32,6 @@
     return state.tasks;
   }
 
-  function syncKey() {
-    return String(state?.settings?.remoteSync?.syncKey || "").trim();
-  }
-
   function same(a, b) {
     return String(a ?? "").trim() === String(b ?? "").trim();
   }
@@ -492,7 +488,7 @@
         : window.confirm(`Excluir “${task.title}”?`);
       if (!confirmed) return;
       const ok = await deleteTaskRemote(task.id);
-      if (!ok) return showToast("Não foi possível excluir no Supabase. Tente novamente.");
+      if (!ok) return showToast("Não foi possível excluir no Neon. Tente novamente.");
       state.tasks = tasks().filter((item) => !same(item.id, task.id));
       if (editingId === task.id) editingId = "";
       saveState();
@@ -505,11 +501,9 @@
   }
 
   async function taskFetch(url, options = {}) {
-    const key = syncKey();
-    if (key.length < 32) throw new Error("Configure a REMOTE_SYNC_KEY em Configurações → Sincronização Supabase.");
-    const headers = { ...(options.headers || {}), "x-sync-key": key };
+    const headers = { ...(options.headers || {}) };
     if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-    const response = await fetch(url, { ...options, headers, cache: "no-store" });
+    const response = await fetch(url, { ...options, headers, cache: "no-store", credentials: "same-origin" });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok || payload.ok === false) throw new Error(payload.error || `Falha HTTP ${response.status}`);
     return payload;
@@ -547,7 +541,7 @@
   }
 
   async function pullTasks({ silent = true } = {}) {
-    if (pullInFlight || syncKey().length < 32 || !navigator.onLine) return false;
+    if (pullInFlight || !navigator.onLine) return false;
     pullInFlight = true;
     try {
       const payload = await taskFetch("/api/tasks");
@@ -619,7 +613,6 @@
   async function enablePush() {
     try {
       if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) throw new Error("Este aparelho não oferece Push Web neste modo. No iPhone, instale o PWA na Tela de Início.");
-      if (syncKey().length < 32) throw new Error("Configure primeiro a sincronização Supabase e a REMOTE_SYNC_KEY.");
       const permission = await Notification.requestPermission();
       if (permission !== "granted") throw new Error("A permissão de notificações não foi concedida.");
       const config = await taskFetch("/api/task-push");

@@ -1,4 +1,4 @@
-// Evita que um pré-cadastro seja marcado como matriculado antes de existir no Supabase
+// Evita que um pré-cadastro seja marcado como matriculado antes de existir no Neon
 // e recupera automaticamente matrículas antigas cujo vínculo aponta para uma criança ausente.
 (() => {
   if (window.__saberPreRegistrationRecoveryLoaded) return;
@@ -20,23 +20,13 @@
       .toLowerCase();
   }
 
-  function syncKey() {
-    try {
-      return String(state?.settings?.remoteSync?.syncKey || document.querySelector("#remoteSyncKey")?.value || "").trim();
-    } catch {
-      return String(document.querySelector("#remoteSyncKey")?.value || "").trim();
-    }
-  }
-
   async function request(method, body, query = "") {
-    const key = syncKey();
-    if (key.length < 6) throw new Error("A chave de sincronização não está preenchida neste aparelho.");
     const response = await fetch(`${ENDPOINT}${query}`, {
       method,
       cache: "no-store",
+      credentials: "same-origin",
       headers: {
         Accept: "application/json",
-        "x-sync-key": key,
         ...(body ? { "Content-Type": "application/json" } : {}),
       },
       ...(body ? { body: JSON.stringify(body) } : {}),
@@ -131,29 +121,29 @@
 
   const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-  async function pullSupabase() {
-    const bridge = window.__saberMaisSupabase;
+  async function pullServer() {
+    const bridge = window.__arteDeAprenderSync;
     if (!bridge?.pullNow) return false;
     try {
       const result = await bridge.pullNow();
       await wait(80);
       return result !== false;
     } catch (error) {
-      console.warn("Falha ao baixar o cadastro do Supabase", error);
+      console.warn("Falha ao baixar o cadastro do Neon", error);
       return false;
     }
   }
 
-  async function pushSupabase(maxAttempts = 8) {
+  async function pushServer(maxAttempts = 8) {
     for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-      const bridge = window.__saberMaisSupabase;
+      const bridge = window.__arteDeAprenderSync;
       const status = bridge?.status?.();
       if (bridge?.syncNow && status?.ready && !status?.busy) {
         try {
           const result = await bridge.syncNow();
           if (result !== false) return true;
         } catch (error) {
-          console.warn("Falha ao enviar matrícula ao Supabase", error);
+          console.warn("Falha ao enviar matrícula ao Neon", error);
         }
       }
       await wait(450);
@@ -172,8 +162,8 @@
 
     let student = studentForRecord(record);
     if (!student) {
-      toast("Atualizando a lista de crianças pelo Supabase...");
-      await pullSupabase();
+      toast("Atualizando a lista de crianças pelo Neon...");
+      await pullServer();
       student = studentForRecord(record);
     }
 
@@ -190,18 +180,18 @@
       if (!state.students.some((item) => String(item.id) === String(student.id))) state.students.push(student);
       try { flushSaveState(); } catch { try { saveState(); } catch {} }
 
-      const synced = await pushSupabase();
+      const synced = await pushServer();
       if (synced) {
-        toast("Cadastro recuperado e salvo no Supabase. Confira agora o plano, as atividades e o valor mensal.");
+        toast("Cadastro recuperado e salvo no Neon. Confira agora o plano, as atividades e o valor mensal.");
       } else {
-        toast("Cadastro recuperado neste aparelho. Confira o plano e tente sincronizar com o Supabase antes de fechar o sistema.");
+        toast("Cadastro recuperado neste aparelho. Confira o plano e tente sincronizar com o Neon antes de fechar o sistema.");
       }
     }
 
     openStudent(student);
   }
 
-  // Intercepta o botão antigo, tenta baixar do Supabase e, se o registro realmente estiver órfão,
+  // Intercepta o botão antigo, tenta baixar do Neon e, se o registro realmente estiver órfão,
   // oferece recuperação usando os dados do próprio pré-cadastro.
   document.addEventListener("click", (event) => {
     const button = event.target.closest('[data-prereg-action="open-student"]');
@@ -236,10 +226,10 @@
       return;
     }
 
-    const synced = await pushSupabase();
+    const synced = await pushServer();
     if (!synced) {
       sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(preregistrationId));
-      toast("A criança foi salva neste aparelho, mas o Supabase ainda não confirmou o envio. O pré-cadastro continuará em conferência para evitar perda de dados.");
+      toast("A criança foi salva neste aparelho, mas o Neon ainda não confirmou o envio. O pré-cadastro continuará em conferência para evitar perda de dados.");
       return;
     }
 
@@ -250,17 +240,17 @@
         enrolledStudentId: student.id,
       });
       sessionStorage.removeItem(PENDING_ENROLLMENT_KEY);
-      toast("Matrícula efetivada, confirmada no Supabase e pré-cadastro concluído.");
+      toast("Matrícula efetivada, confirmada no Neon e pré-cadastro concluído.");
       window.__saberMaisPreRegistrations?.refresh?.();
     } catch (error) {
       sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(preregistrationId));
       console.error("Falha ao concluir pré-cadastro após sincronização", error);
-      toast("A criança já está salva no Supabase, mas o pré-cadastro ainda precisa ser concluído. Tente salvar novamente.");
+      toast("A criança já está salva no Neon, mas o pré-cadastro ainda precisa ser concluído. Tente salvar novamente.");
     }
   }
 
   // O listener original marcava o pré-cadastro como matriculado cerca de 150 ms após o submit,
-  // antes de o envio ao Supabase terminar. Retiramos temporariamente a pendência para impedir isso
+  // antes de o envio ao Neon terminar. Retiramos temporariamente a pendência para impedir isso
   // e só alteramos o status depois que a sincronização da criança foi confirmada.
   document.addEventListener("submit", (event) => {
     if (event.target?.id !== "studentForm") return;
@@ -281,7 +271,7 @@
       finishEnrollmentSafely(preregistrationId, requestedId, childName, birthDate).catch((error) => {
         sessionStorage.setItem(PENDING_ENROLLMENT_KEY, String(preregistrationId));
         console.error("Falha na conclusão segura do pré-cadastro", error);
-        toast("Não foi possível confirmar a matrícula no Supabase. O pré-cadastro permanecerá em conferência.");
+        toast("Não foi possível confirmar a matrícula no Neon. O pré-cadastro permanecerá em conferência.");
       });
     }, 220);
   }, true);

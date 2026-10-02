@@ -18,10 +18,6 @@
   const brl = (value) => new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value || 0));
   const dateTime = (value) => value ? new Date(value).toLocaleString("pt-BR") : "-";
 
-  function syncKey() {
-    try { return String(state?.settings?.remoteSync?.syncKey || "").trim(); } catch { return ""; }
-  }
-
   function students() {
     try { return Array.isArray(state?.students) ? state.students : []; } catch { return []; }
   }
@@ -43,15 +39,12 @@
   }
 
   async function request(action = "status", options = {}) {
-    const key = syncKey();
-    if (key.length < 32) throw new Error("Informe a chave de sincronização em Configurações > Sincronização remota.");
     const response = await fetch(`${ENDPOINT}?action=${encodeURIComponent(action)}`, {
       method: options.method || "GET",
       cache: "no-store",
       credentials: "same-origin",
       headers: {
         Accept: "application/json",
-        "x-sync-key": key,
         ...(options.body ? { "Content-Type": "application/json" } : {}),
       },
       body: options.body ? JSON.stringify(options.body) : undefined,

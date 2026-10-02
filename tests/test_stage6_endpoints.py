@@ -104,3 +104,27 @@ def test_legacy_sync_key_and_supabase_routes_are_removed():
     assert "/api/supabase-sync" not in sync
     assert "/api/teacher-attendance-supabase" not in attendance
     assert "/api/supabase-" not in teacher
+
+
+def test_runtime_frontend_no_longer_depends_on_legacy_sync_key():
+    root = os.path.dirname(os.path.dirname(__file__))
+    files = (
+        "frontend/pre-registration-admin.js",
+        "frontend/pre-registration-recovery-fix.js",
+        "frontend/supabase-admin-sync.js",
+        "frontend/tasks-routine.js",
+        "frontend/tasks-shopping-adjustments.js",
+        "frontend/whatsapp-reminders.js",
+    )
+    for relative in files:
+        source = open(os.path.join(root, relative), encoding="utf-8").read()
+        assert "x-sync-key" not in source, relative
+        assert "REMOTE_SYNC_KEY" not in source, relative
+        assert "chave de sincronização" not in source.lower(), relative
+
+    prereg = open(os.path.join(root, "frontend", "pre-registration-admin.js"), encoding="utf-8").read()
+    tasks = open(os.path.join(root, "frontend", "tasks-routine.js"), encoding="utf-8").read()
+    whatsapp = open(os.path.join(root, "frontend", "whatsapp-reminders.js"), encoding="utf-8").read()
+    assert 'credentials: "same-origin"' in prereg
+    assert 'credentials: "same-origin"' in tasks
+    assert 'credentials: "same-origin"' in whatsapp

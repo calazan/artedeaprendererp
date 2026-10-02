@@ -80,18 +80,13 @@
     return task.occurrences[dateText] || {};
   }
 
-  function syncKey() {
-    try { return String(state?.settings?.remoteSync?.syncKey || "").trim(); } catch { return ""; }
-  }
-
   async function persistTask(task) {
     if (!task) return false;
     task.updatedAt = new Date().toISOString();
     task.syncPending = false;
     try { saveState(); } catch {}
 
-    const key = syncKey();
-    if (key.length < 32 || !navigator.onLine) {
+    if (!navigator.onLine) {
       task.syncPending = true;
       try { saveState(); } catch {}
       return false;
@@ -100,7 +95,8 @@
     try {
       const response = await fetch("/api/tasks", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "x-sync-key": key },
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
         body: JSON.stringify({ task }),
         cache: "no-store",
       });
