@@ -56,7 +56,7 @@ def safe_filename(value="arquivo"):
 
 @router.api_route("/api/employees", methods=["GET", "POST"])
 async def employees_api(request: Request):
-    if not legacy_internal_authorized(request):
+    if not await legacy_internal_authorized(request):
         return json_response({"ok": False, "error": "Chave interna inválida."}, 401)
     try:
         if request.method == "GET":
@@ -75,7 +75,7 @@ async def employees_api(request: Request):
 
 @router.api_route("/api/employee-documents", methods=["GET", "POST", "DELETE"])
 async def employee_documents_api(request: Request):
-    if not legacy_internal_authorized(request):
+    if not await legacy_internal_authorized(request):
         return json_response({"ok": False, "error": "Chave interna inválida."}, 401)
     try:
         if request.method == "GET":
