@@ -23,8 +23,11 @@ DEFAULT_ATTENDANCE_WINDOW_DAYS = 90
 
 def attendance_since_for_request(request: Request) -> str:
     raw = str(request.query_params.get("attendanceSince") or "").strip()
-    if raw and re.fullmatch(r"\d{4}-\d{2}-\d{2}", raw):
-        return raw
+    if raw:
+        try:
+            return datetime.strptime(raw, "%Y-%m-%d").date().isoformat()
+        except Exception:
+            pass
     return (datetime.now(timezone.utc).date() - timedelta(days=DEFAULT_ATTENDANCE_WINDOW_DAYS)).isoformat()
 
 
