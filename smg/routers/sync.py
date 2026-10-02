@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -187,7 +187,7 @@ def legacy_tombstone_entries(current: dict, deleted: dict, client_id: str) -> li
         for resource in LIST_RESOURCES
     }
     entries = []
-    now = datetime.utcnow().isoformat() + "Z"
+    now = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
     for resource, ids_value in as_dict(deleted).items():
         if resource not in by_resource:
             continue
@@ -333,7 +333,7 @@ async def compatibility_sync(request: Request):
             {
                 "ok": True,
                 "forced": force,
-                "updatedAt": updated.get("updatedAt") or datetime.utcnow().isoformat() + "Z",
+                "updatedAt": updated.get("updatedAt") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                 "revision": rev,
                 "teacherAttendanceRevision": rev,
                 "eventRosterRevision": rev,
@@ -498,7 +498,7 @@ async def direct_supabase_sync(request: Request):
                     {
                         "ok": True,
                         "merged": base_revision != revision,
-                        "updatedAt": updated.get("updatedAt") or datetime.utcnow().isoformat() + "Z",
+                        "updatedAt": updated.get("updatedAt") or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                         "revision": next_revision,
                         "data": updated,
                         "tombstones": updated_tombstones,
