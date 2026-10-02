@@ -90,4 +90,4 @@ Pré-cadastros rejeitados são excluídos após `PREREG_REJECTED_RETENTION_DAYS`
 
 As rotas de runtime com nome `supabase` e a autenticação por `REMOTE_SYNC_KEY` foram removidas. Frontend e backend usam somente as rotas Neon/PostgreSQL atuais e a sessão HttpOnly validada contra o vínculo ativo no banco.
 
-O disparo de lembretes do WhatsApp usa exclusivamente `CRON_SECRET` no cabeçalho `Authorization: Bearer <segredo>`. Nenhum token de cron é lido de `smg_meta`.
+O disparo agendado de lembretes do WhatsApp possui um único endpoint de cron, `POST /api/internal/whatsapp-dispatch`, usando exclusivamente `CRON_SECRET` no cabeçalho `Authorization: Bearer <segredo>`. O botão administrativo “Processar agora” continua como ação autenticada por sessão. Nenhum token de cron é lido de `smg_meta`.

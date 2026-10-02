@@ -135,3 +135,13 @@ def test_unused_supabase_seed_is_not_precached():
     root = os.path.dirname(os.path.dirname(__file__))
     worker = open(os.path.join(root, "frontend", "sw.js"), encoding="utf-8").read()
     assert "supabase-full-state-seed-fix.js" not in worker
+
+
+def test_whatsapp_cron_has_single_internal_entrypoint():
+    root = os.path.dirname(os.path.dirname(__file__))
+    whatsapp = open(os.path.join(root, "smg", "routers", "whatsapp.py"), encoding="utf-8").read()
+    internal = open(os.path.join(root, "smg", "routers", "internal_cron.py"), encoding="utf-8").read()
+    assert "cron_authorized" not in whatsapp
+    assert 'action == "dispatch" and request.method == "GET"' not in whatsapp
+    assert '@router.post("/whatsapp-dispatch")' in internal
+    assert "bearer_secret_authorized(request)" in internal

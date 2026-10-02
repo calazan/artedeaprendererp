@@ -13,7 +13,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from ..auth import OWNER_ADMIN_ROLES, require_role
 from ..audit import record_audit
 from ..config import whatsapp_provider_config
-from ..security import bearer_secret_authorized, safe_equal, sync_authorized
+from ..security import safe_equal, sync_authorized
 from ..utils import as_dict, iso_now
 from ..whatsapp import (
     claim_message,
@@ -69,10 +69,6 @@ def parse_body(raw: bytes) -> dict:
         return value if isinstance(value, dict) else {}
     except Exception:
         return {}
-
-
-def cron_authorized(request: Request) -> bool:
-    return bearer_secret_authorized(request)
 
 
 async def dispatch_reminders():
@@ -284,11 +280,6 @@ async def whatsapp_reminders(request: Request):
         action = str(request.query_params.get("action") or "")
         if action == "webhook":
             return await handle_webhook(request, await raw_body(request) if request.method == "POST" else b"")
-
-        if action == "dispatch" and request.method == "GET":
-            if not cron_authorized(request):
-                return response({"ok": False, "error": "Cron não autorizado."}, 401)
-            return response(await dispatch_reminders())
 
         return await handle_admin(
             request,
