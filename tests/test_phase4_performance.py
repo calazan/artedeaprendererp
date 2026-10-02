@@ -290,7 +290,10 @@ def test_sync_revision_endpoint_reads_only_marker(monkeypatch):
         return {"revision": 17, "updatedAt": "2026-10-02T12:00:00Z"}
 
     monkeypatch.setattr(sync_router, "database_configured", lambda: True)
-    monkeypatch.setattr(sync_router, "sync_authorized", lambda request, body: True)
+    async def fake_sync_authorized(request, body):
+        return True
+
+    monkeypatch.setattr(sync_router, "sync_authorized", fake_sync_authorized)
     monkeypatch.setattr(sync_router, "get_sync_marker", fake_marker)
 
     response = asyncio.run(sync_router.sync_revision(_request("/api/sync-revision")))
@@ -685,7 +688,10 @@ def test_teacher_attendance_post_refetches_windowed_state(monkeypatch):
     async def fake_audit(*args, **kwargs):
         return None
 
-    monkeypatch.setattr(attendance_router, "role_authorized", lambda request, roles: True)
+    async def fake_role_authorized(request, roles):
+        return True
+
+    monkeypatch.setattr(attendance_router, "role_authorized", fake_role_authorized)
     monkeypatch.setattr(attendance_router, "database_configured", lambda: True)
     monkeypatch.setattr(attendance_router, "database_provider", lambda: "neon-postgres")
     monkeypatch.setattr(attendance_router, "fetch_critical_state", fake_fetch)
