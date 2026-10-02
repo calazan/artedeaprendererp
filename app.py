@@ -38,7 +38,7 @@ async def runtime_mode():
 
 @app.get("/api/environment-status")
 async def environment_diagnostic(request: Request):
-    if not role_authorized(request, ADMIN_ROLES):
+    if not await role_authorized(request, ADMIN_ROLES):
         return JSONResponse({"ok": False, "error": "Autenticação obrigatória."}, status_code=401)
     whatsapp = whatsapp_provider_config()
     return JSONResponse(
@@ -138,7 +138,7 @@ async def bundled_frontend(path: str, request: Request):
 
     if is_page and normalized not in public_pages:
         roles = TEACHER_ROLES if normalized in teacher_pages else ADMIN_ROLES
-        if not role_authorized(request, roles):
+        if not await role_authorized(request, roles):
             return login_redirect("/" + normalized if normalized else "/")
 
     relative = normalized or "index.html"
