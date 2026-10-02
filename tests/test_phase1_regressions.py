@@ -100,7 +100,7 @@ def test_schema_ensure_functions_work_without_and_with_supabase_roles(monkeypatc
 
             tables = await admin_execute(
                 url,
-                "SELECT to_regclass(name)::text FROM unnest(%s::text[]) AS name",
+                "SELECT to_regclass(name)::text FROM unnest(%s::text[]) AS names(name)",
                 (list(TARGET_TABLES),),
                 fetch=True,
             )
