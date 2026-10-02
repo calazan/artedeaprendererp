@@ -7,9 +7,19 @@ from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
 from .. import APP_VERSION
-from ..auth import TEACHER_ROLES, role_authorized
+from ..auth import (
+    TEACHER_ROLES,
+    role_authorized,
+    session_configuration_error,
+)
 from ..auth_store import ensure_auth_schema
-from ..config import database_configured, database_provider, environment_status, remote_sync_key
+from ..config import (
+    database_configured,
+    database_provider,
+    environment_status,
+    production_environment,
+    remote_sync_key,
+)
 from ..state import database_counts, ensure_core_schema
 
 logger = logging.getLogger("smg.routers.health")
@@ -53,6 +63,24 @@ async def _health(*, detailed: bool = False):
                 int(_public_health_cache.get("status") or 200),
             )
         _public_health_cache = None
+
+    session_error = session_configuration_error() if production_environment() else ""
+    if session_error:
+        data = {
+            "ok": False,
+            "configured": database_configured(),
+            "schemaReady": False,
+            "authSchemaReady": False,
+            **({"environment": environment_status(), **compatibility_payload()} if detailed else {}),
+            "error": session_error,
+        }
+        if not detailed:
+            _public_health_cache = {
+                "expiresAt": monotonic() + PUBLIC_HEALTH_CACHE_SECONDS,
+                "data": data,
+                "status": 503,
+            }
+        return payload(data, 503)
 
     if not database_configured():
         data = {
