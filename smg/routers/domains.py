@@ -16,14 +16,14 @@ class RecordPayload(BaseModel):
     expected_version: int | None = Field(default=None, alias="expectedVersion", ge=1)
 
 
-def authorize(request: Request) -> None:
-    if not sync_authorized(request, {}):
+async def authorize(request: Request) -> None:
+    if not await sync_authorized(request, {}):
         raise HTTPException(status_code=401, detail="Sessão ou chave de sincronização inválida.")
 
 
 @router.get("/modules")
 async def modules(request: Request):
-    authorize(request)
+    await authorize(request)
     return {"ok": True, "modules": sorted(RESOURCE_TYPES)}
 
 
@@ -34,7 +34,7 @@ async def records(
     include_deleted: bool = False,
     limit: int = Query(1000, ge=1, le=5000),
 ):
-    authorize(request)
+    await authorize(request)
     return {
         "ok": True,
         "resource": resource,
@@ -44,7 +44,7 @@ async def records(
 
 @router.get("/erp/{resource}/{record_id}")
 async def record(request: Request, resource: str, record_id: str):
-    authorize(request)
+    await authorize(request)
     item = await get_record(resource, record_id)
     if not item:
         raise HTTPException(status_code=404, detail="Registro não encontrado.")
@@ -53,7 +53,7 @@ async def record(request: Request, resource: str, record_id: str):
 
 @router.post("/erp/{resource}")
 async def upsert(request: Request, resource: str, payload: RecordPayload):
-    authorize(request)
+    await authorize(request)
     values = payload.model_dump(by_alias=False, exclude_none=True)
     expected = values.pop("expected_version", None)
     values.update(payload.model_extra or {})
@@ -70,7 +70,7 @@ async def remove(
     record_id: str,
     expected_version: int | None = Query(None, ge=1),
 ):
-    authorize(request)
+    await authorize(request)
     removed = await delete_record(resource, record_id, expected_version=expected_version)
     if not removed:
         raise HTTPException(status_code=409, detail="Registro ausente ou alterado em outro dispositivo.")
@@ -79,13 +79,13 @@ async def remove(
 
 @router.get("/backups")
 async def backups(request: Request, limit: int = Query(50, ge=1, le=200)):
-    authorize(request)
+    await authorize(request)
     return {"ok": True, "items": await list_backups(limit)}
 
 
 @router.get("/backups/{backup_id}")
 async def backup(request: Request, backup_id: str):
-    authorize(request)
+    await authorize(request)
     item = await get_backup(backup_id)
     if not item:
         raise HTTPException(status_code=404, detail="Backup não encontrado.")
@@ -94,7 +94,7 @@ async def backup(request: Request, backup_id: str):
 
 @router.post("/backups")
 async def backup_create(request: Request):
-    authorize(request)
+    await authorize(request)
     body = await request.json()
     snapshot = body.get("snapshot") if isinstance(body, dict) else None
     if not isinstance(snapshot, dict):
