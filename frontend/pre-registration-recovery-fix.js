@@ -259,6 +259,44 @@
     }
   }
 
+  async function reconcileEnrolledStudents() {
+    try {
+      const result = await request("GET", null, "?status=enrolled&limit=500");
+      const enrolled = Array.isArray(result.records) ? result.records : [];
+      if (!enrolled.length) return;
+
+      // Primeiro tenta trazer do Neon qualquer criança que já exista em outro aparelho.
+      await pullSupabase();
+
+      const recovered = [];
+      for (const record of enrolled) {
+        if (studentForRecord(record)) continue;
+        if (!record?.enrolled_student_id) continue;
+
+        const student = buildRecoveredStudent(record);
+        state.students ||= [];
+        if (!state.students.some((item) => String(item.id) === String(student.id))) {
+          state.students.push(student);
+          recovered.push(student);
+        }
+      }
+
+      if (!recovered.length) return;
+
+      try { flushSaveState(); } catch { try { saveState(); } catch {} }
+      try { renderAll(); } catch { try { renderStudents(); } catch {} }
+
+      const synced = await pushSupabase();
+      if (synced) {
+        toast(`${recovered.length} matrícula(s) do pré-cadastro foram recuperadas e voltaram para Crianças/Alunos.`);
+      } else {
+        toast(`${recovered.length} matrícula(s) foram recuperadas neste aparelho e aguardam sincronização com o Neon.`);
+      }
+    } catch (error) {
+      console.warn("Falha ao reconciliar matrículas do pré-cadastro", error);
+    }
+  }
+
   // O listener original marcava o pré-cadastro como matriculado cerca de 150 ms após o submit,
   // antes de o envio ao Supabase terminar. Retiramos temporariamente a pendência para impedir isso
   // e só alteramos o status depois que a sincronização da criança foi confirmada.
@@ -285,4 +323,12 @@
       });
     }, 220);
   }, true);
+
+  // Repara automaticamente registros antigos marcados como matriculados que ficaram sem
+  // uma criança correspondente no cadastro principal.
+  window.setTimeout(() => {
+    reconcileEnrolledStudents().catch((error) => {
+      console.warn("Reconciliação automática de pré-cadastros", error);
+    });
+  }, 1800);
 })();
