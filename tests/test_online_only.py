@@ -70,3 +70,21 @@ def test_pre_app_payment_snapshot_is_not_precached_or_loaded():
     index = (ROOT / "frontend" / "index.html").read_text(encoding="utf-8")
     assert "pre-app-state-guard.js" not in worker
     assert "pre-app-state-guard.js" not in index
+
+
+def test_security_branch_preserves_latest_main_attendance_and_preregistration_fixes():
+    root = ROOT
+    state = (root / "smg" / "state.py").read_text(encoding="utf-8")
+    sync = (root / "frontend" / "supabase-admin-sync.js").read_text(encoding="utf-8")
+    recovery = (root / "frontend" / "pre-registration-recovery-fix.js").read_text(encoding="utf-8")
+    app = (root / "frontend" / "app.min.js").read_text(encoding="utf-8")
+    worker = (root / "frontend" / "sw.js").read_text(encoding="utf-8")
+    index = (root / "frontend" / "index.html").read_text(encoding="utf-8")
+
+    assert "WHERE COALESCE(public.smg_attendance.record->>'updatedAt','')" in state
+    assert "const PULL_INTERVAL_MS = 15_000;" in sync
+    assert "pullSilent: () => pullNow({ force: true })" in sync
+    assert "async function reconcileEnrolledStudents()" in recovery
+    assert 'aria-label="Manhã das 08:00 às 12:00">M</button>' in app
+    assert "app.min.js?v=469-online2" in worker
+    assert "app.min.js?v=469-online2" in index

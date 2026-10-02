@@ -123,9 +123,9 @@
 
   async function pullServer() {
     const bridge = window.__arteDeAprenderSync;
-    if (!bridge?.pullNow) return false;
+    if (!bridge?.pullNow && !bridge?.pullSilent) return false;
     try {
-      const result = await bridge.pullNow();
+      const result = bridge.pullSilent ? await bridge.pullSilent() : await bridge.pullNow();
       await wait(80);
       return result !== false;
     } catch (error) {
@@ -154,6 +154,41 @@
   async function enrolledRecordById(id) {
     const result = await request("GET", null, "?status=enrolled&limit=500");
     return (Array.isArray(result.records) ? result.records : []).find((record) => String(record.id) === String(id)) || null;
+  }
+
+  async function reconcileEnrolledStudents() {
+    try {
+      const result = await request("GET", null, "?status=enrolled&limit=500");
+      const enrolled = Array.isArray(result.records) ? result.records : [];
+      if (!enrolled.length) return;
+
+      await pullServer();
+
+      const recovered = [];
+      for (const record of enrolled) {
+        if (studentForRecord(record)) continue;
+        if (!record?.enrolled_student_id) continue;
+        const student = buildRecoveredStudent(record);
+        state.students ||= [];
+        if (!state.students.some((item) => String(item.id) === String(student.id))) {
+          state.students.push(student);
+          recovered.push(student);
+        }
+      }
+
+      if (!recovered.length) return;
+      try { flushSaveState(); } catch { try { saveState(); } catch {} }
+      try { renderAll(); } catch { try { renderStudents(); } catch {} }
+
+      const synced = await pushServer();
+      if (synced) {
+        toast(`${recovered.length} matrícula(s) do pré-cadastro foram recuperadas e confirmadas no Neon.`);
+      } else {
+        toast(`${recovered.length} matrícula(s) foram recuperadas na sessão atual e aguardam sincronização com o Neon.`);
+      }
+    } catch (error) {
+      console.warn("Falha ao reconciliar matrículas do pré-cadastro", error);
+    }
   }
 
   async function openOrRecoverStudent(recordId) {
@@ -275,4 +310,10 @@
       });
     }, 220);
   }, true);
+
+  window.setTimeout(() => {
+    reconcileEnrolledStudents().catch((error) => {
+      console.warn("Reconciliação automática de pré-cadastros", error);
+    });
+  }, 1800);
 })();
