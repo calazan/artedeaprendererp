@@ -319,6 +319,8 @@ async def sync_critical_state(payload: dict) -> dict:
                         VALUES (%s::date,%s,%s,now())
                         ON CONFLICT (attendance_date, student_id) DO UPDATE
                         SET record = EXCLUDED.record, updated_at = now()
+                        WHERE COALESCE(public.smg_attendance.record->>'updatedAt','')
+                              <= COALESCE(EXCLUDED.record->>'updatedAt','')
                         """,
                         [(d, s, Jsonb(r)) for d, s, r in attendance_rows],
                     )
