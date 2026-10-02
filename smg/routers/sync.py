@@ -259,7 +259,7 @@ async def compatibility_sync(request: Request):
         )
 
     body = await read_json_limited(request) if request.method == "POST" else {}
-    if not sync_authorized(request, body):
+    if not await sync_authorized(request, body):
         return response(
             {"ok": False, "error": "Autenticação obrigatória."},
             401,
@@ -396,7 +396,7 @@ async def compatibility_sync(request: Request):
 async def sync_revision(request: Request):
     if not database_configured():
         return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
-    if not sync_authorized(request, {}):
+    if not await sync_authorized(request, {}):
         return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
     try:
         marker = await get_sync_marker()
@@ -412,7 +412,7 @@ async def direct_supabase_sync(request: Request):
         return response({"ok": False, "error": "Neon ainda não configurado no ambiente Production."}, 503)
 
     body = await read_json_limited(request) if request.method == "POST" else {}
-    if not sync_authorized(request, body):
+    if not await sync_authorized(request, body):
         return response({"ok": False, "error": "Autenticação obrigatória."}, 401)
 
     if request.method == "GET" and request.query_params.get("mode") == "status":
