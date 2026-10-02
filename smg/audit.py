@@ -37,6 +37,8 @@ ALTER TABLE public.smg_backup_revisions ENABLE ROW LEVEL SECURITY;
 """
 
 _schema_ready = False
+DAILY_BACKUP_RETENTION = 35
+MONTHLY_BACKUP_RETENTION = 12
 
 
 async def ensure_audit_schema() -> None:
@@ -83,24 +85,44 @@ async def record_audit(
 
 
 async def capture_backup(snapshot: dict, *, source: str, client_id: str = "") -> None:
-    """Keep one immutable daily and monthly pre-change snapshot in the database."""
+    """Keep daily/monthly pre-change snapshots with bounded retention."""
     await ensure_audit_schema()
     now = datetime.now(timezone.utc)
     periods = (("daily", now.strftime("%Y-%m-%d")), ("monthly", now.strftime("%Y-%m")))
     async with connection() as conn:
-        async with conn.cursor() as cur:
-            for kind, period in periods:
-                await cur.execute(
-                    """
-                    INSERT INTO public.smg_backup_revisions(kind,period_key,source,client_id,snapshot,created_at)
-                    VALUES (%s,%s,%s,%s,%s,now())
-                    ON CONFLICT (kind,period_key) DO NOTHING
-                    """,
-                    (
-                        kind,
-                        period,
-                        str(source or "python-fastapi")[:120],
-                        str(client_id or "")[:160],
-                        Jsonb(snapshot),
-                    ),
-                )
+        async with conn.transaction():
+            async with conn.cursor() as cur:
+                for kind, period in periods:
+                    await cur.execute(
+                        """
+                        INSERT INTO public.smg_backup_revisions(kind,period_key,source,client_id,snapshot,created_at)
+                        VALUES (%s,%s,%s,%s,%s,now())
+                        ON CONFLICT (kind,period_key) DO NOTHING
+                        """,
+                        (
+                            kind,
+                            period,
+                            str(source or "python-fastapi")[:120],
+                            str(client_id or "")[:160],
+                            Jsonb(snapshot),
+                        ),
+                    )
+
+                for kind, keep in (
+                    ("daily", DAILY_BACKUP_RETENTION),
+                    ("monthly", MONTHLY_BACKUP_RETENTION),
+                ):
+                    await cur.execute(
+                        """
+                        DELETE FROM public.smg_backup_revisions
+                        WHERE kind=%s
+                          AND id NOT IN (
+                            SELECT id
+                            FROM public.smg_backup_revisions
+                            WHERE kind=%s
+                            ORDER BY created_at DESC, id DESC
+                            LIMIT %s
+                          )
+                        """,
+                        (kind, kind, keep),
+                    )
