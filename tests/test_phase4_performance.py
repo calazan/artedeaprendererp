@@ -547,3 +547,103 @@ vm.runInThisContext(fs.readFileSync(process.argv[1],"utf8"),{filename:process.ar
         timeout=20,
     )
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_protocol_v2_attendance_delta_does_not_rewrite_untouched_history(monkeypatch):
+    async def scenario():
+        url = await _prepare(monkeypatch)
+        day = "2026-10-01"
+        changed_id = "phase4-attendance-changed"
+        untouched_id = "phase4-attendance-untouched"
+        try:
+            await _sql(
+                url,
+                "DELETE FROM public.smg_attendance WHERE attendance_date=%s::date AND student_id = ANY(%s::text[])",
+                (day, [changed_id, untouched_id]),
+            )
+            await _sql(
+                url,
+                """
+                INSERT INTO public.smg_attendance(attendance_date,student_id,record,updated_at)
+                VALUES
+                  (%s::date,%s,%s,now()-interval '1 hour'),
+                  (%s::date,%s,%s,now()-interval '1 hour')
+                """,
+                (
+                    day,
+                    changed_id,
+                    Jsonb({"status": "present", "updatedAt": "2026-10-01T10:00:00Z"}),
+                    day,
+                    untouched_id,
+                    Jsonb({"status": "present", "updatedAt": "2026-10-01T10:00:00Z"}),
+                ),
+            )
+            before = (
+                await _sql(
+                    url,
+                    """
+                    SELECT updated_at
+                    FROM public.smg_attendance
+                    WHERE attendance_date=%s::date AND student_id=%s
+                    """,
+                    (day, untouched_id),
+                    fetch=True,
+                )
+            )[0][0]
+
+            await state.sync_critical_state(
+                {
+                    "state": {
+                        "attendance": {
+                            day: {
+                                changed_id: {
+                                    "status": "absent",
+                                    "updatedAt": "2026-10-01T11:00:00Z",
+                                },
+                                untouched_id: {
+                                    "status": "present",
+                                    "updatedAt": "2026-10-01T10:00:00Z",
+                                },
+                            }
+                        }
+                    },
+                    "attendanceDelta": {
+                        day: {
+                            changed_id: {
+                                "status": "absent",
+                                "updatedAt": "2026-10-01T11:00:00Z",
+                            }
+                        }
+                    },
+                    "deleted": {},
+                    "clientId": "phase4-attendance-delta",
+                    "source": "phase4-test",
+                }
+            )
+
+            rows = await _sql(
+                url,
+                """
+                SELECT student_id,record,updated_at
+                FROM public.smg_attendance
+                WHERE attendance_date=%s::date AND student_id = ANY(%s::text[])
+                ORDER BY student_id
+                """,
+                (day, [changed_id, untouched_id]),
+                fetch=True,
+            )
+            by_id = {str(row[0]): row for row in rows}
+            assert by_id[changed_id][1]["status"] == "absent"
+            assert by_id[untouched_id][1]["status"] == "present"
+            assert by_id[untouched_id][2] == before
+        finally:
+            await _sql(
+                url,
+                "DELETE FROM public.smg_attendance WHERE attendance_date=%s::date AND student_id = ANY(%s::text[])",
+                (day, [changed_id, untouched_id]),
+            )
+            await db.close_pool()
+            state._schema_ready = False
+            domains._schema_ready = False
+
+    asyncio.run(scenario())
