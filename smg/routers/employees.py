@@ -76,16 +76,7 @@ async def employees_api(request: Request):
         )
         return json_response({"ok": True, **result})
     except PayloadTooLargeError:
-        return json_response(
-            {
-                "ok": False,
-                "error": (
-                    "O corpo do upload é grande demais. Use um arquivo de até 3 MB "
-                    "em PDF, JPG, PNG ou WEBP."
-                ),
-            },
-            413,
-        )
+        return json_response({"ok": False, "error": "Payload de funcionários muito grande."}, 413)
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return json_response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
@@ -173,6 +164,17 @@ async def employee_documents_api(request: Request):
             }
         )
         return json_response({"ok": True, "document": document}, 201)
+    except PayloadTooLargeError:
+        return json_response(
+            {
+                "ok": False,
+                "error": (
+                    "O corpo do upload é grande demais. Use um arquivo de até 3 MB "
+                    "em PDF, JPG, PNG ou WEBP."
+                ),
+            },
+            413,
+        )
     except Exception:
         logger.exception("Erro interno inesperado no endpoint.")
         return json_response({"ok": False, "error": INTERNAL_ERROR_MESSAGE}, 500)
