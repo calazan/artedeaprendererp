@@ -3,7 +3,7 @@ from __future__ import annotations
 import copy
 import json
 import re
-from datetime import date
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -13,6 +13,7 @@ from .db import connection
 from .utils import as_dict, as_list, iso_now, iso_value, jsonable
 
 SCHEMA_VERSION = 2
+ATTENDANCE_EPOCH = "1970-01-01T00:00:00Z"
 _schema_ready = False
 
 CORE_SCHEMA_SQL = """
@@ -95,7 +96,24 @@ async def ensure_core_schema() -> None:
     _schema_ready = True
 
 
-def normalize_attendance_record(record: Any) -> dict:
+def parse_attendance_timestamp(value: Any, *, fallback: str = ATTENDANCE_EPOCH) -> datetime:
+    raw = str(value or fallback).strip()
+    try:
+        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except Exception:
+        if raw != fallback:
+            return parse_attendance_timestamp(fallback, fallback=ATTENDANCE_EPOCH)
+        return datetime(1970, 1, 1, tzinfo=timezone.utc)
+
+
+def format_attendance_timestamp(value: Any, *, fallback: str = ATTENDANCE_EPOCH) -> str:
+    return parse_attendance_timestamp(value, fallback=fallback).isoformat().replace("+00:00", "Z")
+
+
+def normalize_attendance_record(record: Any, *, fallback_updated_at: str = ATTENDANCE_EPOCH) -> dict:
     item = as_dict(record)
     status = str(item.get("status") or "")
     if status not in {"present", "absent", "excused", "unset"}:
@@ -106,7 +124,7 @@ def normalize_attendance_record(record: Any) -> dict:
         "checkIn": str(item.get("checkIn") or ""),
         "checkOut": str(item.get("checkOut") or ""),
         "hours": float(item.get("hours") or 0),
-        "updatedAt": str(item.get("updatedAt") or iso_now()),
+        "updatedAt": format_attendance_timestamp(item.get("updatedAt"), fallback=fallback_updated_at),
         "source": str(item.get("source") or "neon-postgres"),
     }
 
@@ -181,12 +199,16 @@ async def _delete_ids(cur, table: str, ids: list[str]) -> None:
 
 async def _sync_payments(cur, rows: list[dict], deleted_ids: list[str]) -> None:
     incoming = dedupe_incoming_payments(rows)
+    deleted = sorted({str(v or "").strip() for v in deleted_ids if str(v or "").strip()})
+    deleted_set = set(deleted)
 
     await cur.execute("SELECT id, student_id, period FROM public.smg_payments WHERE deleted_at IS NULL")
     active_rows = await cur.fetchall()
     active_by_key = {}
     active_by_id = {}
     for row in active_rows:
+        if str(row[0]) in deleted_set:
+            continue
         item = {"id": row[0], "student_id": row[1], "period": row[2]}
         active_by_id[str(row[0])] = item
         key = payment_business_key(item)
@@ -242,7 +264,6 @@ async def _sync_payments(cur, rows: list[dict], deleted_ids: list[str]) -> None:
             ],
         )
 
-    deleted = sorted({str(v or "").strip() for v in deleted_ids if str(v or "").strip()})
     if deleted:
         await cur.execute(
             """
@@ -319,8 +340,13 @@ async def sync_critical_state(payload: dict) -> dict:
                         VALUES (%s::date,%s,%s,now())
                         ON CONFLICT (attendance_date, student_id) DO UPDATE
                         SET record = EXCLUDED.record, updated_at = now()
-                        WHERE COALESCE(public.smg_attendance.record->>'updatedAt','')
-                              <= COALESCE(EXCLUDED.record->>'updatedAt','')
+                        WHERE (
+                          CASE
+                            WHEN COALESCE(public.smg_attendance.record->>'updatedAt','') = ''
+                              THEN '-infinity'::timestamptz
+                            ELSE (public.smg_attendance.record->>'updatedAt')::timestamptz
+                          END
+                        ) <= (EXCLUDED.record->>'updatedAt')::timestamptz
                         """,
                         [(d, s, Jsonb(r)) for d, s, r in attendance_rows],
                     )
@@ -450,30 +476,65 @@ async def database_counts() -> dict:
 async def save_attendance_records(day: str, records: dict) -> dict:
     await ensure_core_schema()
     now = iso_now()
-    rows = []
-    for student_id, record in as_dict(records).items():
-        if not student_id:
-            continue
-        normalized = normalize_attendance_record(
-            {
-                **as_dict(record),
-                "updatedAt": now,
-                "source": "teacher-page-neon",
-            }
-        )
-        rows.append((day, str(student_id), normalized))
-    if not rows:
+    incoming = {
+        str(student_id): as_dict(record)
+        for student_id, record in as_dict(records).items()
+        if str(student_id or "").strip()
+    }
+    if not incoming:
         return {"updatedAt": now}
 
     async with connection() as conn:
         async with conn.transaction():
             async with conn.cursor() as cur:
+                student_ids = list(incoming)
+                await cur.execute(
+                    """
+                    SELECT student_id, record
+                    FROM public.smg_attendance
+                    WHERE attendance_date=%s::date
+                      AND student_id = ANY(%s::text[])
+                    """,
+                    (day, student_ids),
+                )
+                existing_by_id = {
+                    str(row[0]): normalize_attendance_record(row[1] or {})
+                    for row in await cur.fetchall()
+                }
+
+                rows = []
+                for student_id, raw_record in incoming.items():
+                    existing = existing_by_id.get(student_id, {})
+                    requested_at = format_attendance_timestamp(
+                        raw_record.get("updatedAt"),
+                        fallback=now,
+                    )
+                    if existing and parse_attendance_timestamp(existing.get("updatedAt")) > parse_attendance_timestamp(requested_at):
+                        continue
+                    merged = {
+                        **existing,
+                        **raw_record,
+                        "updatedAt": requested_at,
+                        "source": "teacher-page-neon",
+                    }
+                    rows.append((day, student_id, normalize_attendance_record(merged)))
+
+                if not rows:
+                    return {"updatedAt": now}
+
                 await cur.executemany(
                     """
                     INSERT INTO public.smg_attendance(attendance_date, student_id, record, updated_at)
                     VALUES (%s::date,%s,%s,now())
                     ON CONFLICT (attendance_date, student_id) DO UPDATE
                     SET record=EXCLUDED.record, updated_at=now()
+                    WHERE (
+                      CASE
+                        WHEN COALESCE(public.smg_attendance.record->>'updatedAt','') = ''
+                          THEN '-infinity'::timestamptz
+                        ELSE (public.smg_attendance.record->>'updatedAt')::timestamptz
+                      END
+                    ) <= (EXCLUDED.record->>'updatedAt')::timestamptz
                     """,
                     [(d, s, Jsonb(r)) for d, s, r in rows],
                 )
@@ -486,7 +547,6 @@ async def save_attendance_records(day: str, records: dict) -> dict:
                     (Jsonb({"updatedAt": now, "source": "teacher-page-neon"}),),
                 )
     return {"updatedAt": now}
-
 
 def teacher_public_state(critical: dict) -> dict:
     regular = []
