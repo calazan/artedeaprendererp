@@ -527,6 +527,7 @@ async def direct_supabase_sync(request: Request):
                         "clientId": client_id,
                         "source": body.get("source") or "admin-app-v2",
                         "syncRevision": next_revision,
+                        "attendanceDelta": as_dict(body.get("attendance")),
                         "tombstones": plan["tombstones"],
                         "clearTombstones": plan["clearTombstones"],
                     }
