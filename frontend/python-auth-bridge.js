@@ -4,7 +4,6 @@
   const SAFE_PERSISTENT_KEYS = new Set([
     "arteDeAprenderERP.navigationColors.v2",
   ]);
-  const SESSION_SYNC_SENTINEL = "python-session-authenticated-bridge-v1";
   const nativeFetch = window.fetch.bind(window);
   const nativeStorage = {
     getItem: Storage.prototype.getItem,
@@ -141,14 +140,17 @@
     try {
       if (typeof state !== "object" || !state) return false;
       state.settings = state.settings && typeof state.settings === "object" ? state.settings : {};
+      state.settings.passwordEnabled = false;
+      state.settings.password = "";
+      state.settings.passwordHash = "";
       state.settings.remoteSync = state.settings.remoteSync && typeof state.settings.remoteSync === "object"
         ? state.settings.remoteSync
         : {};
       Object.assign(state.settings.remoteSync, {
-        syncKey: SESSION_SYNC_SENTINEL,
-        enabled: true,
-        autoSync: true,
-        pullOnOpen: true,
+        syncKey: "",
+        enabled: false,
+        autoSync: false,
+        pullOnOpen: false,
       });
       return true;
     } catch {

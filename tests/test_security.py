@@ -174,3 +174,14 @@ def test_incomplete_financial_snapshot_is_blocked():
 def test_missing_populated_domain_is_blocked():
     issue = supplemental_snapshot_issue({"settings": {"currency": "BRL"}}, {})
     assert issue and issue["reason"] == "missing-domains"
+
+
+def test_frontend_disables_legacy_local_password_and_sync_secret():
+    from pathlib import Path
+
+    source = (Path(__file__).resolve().parents[1] / "frontend" / "python-auth-bridge.js").read_text(encoding="utf-8")
+    assert "SESSION_SYNC_SENTINEL" not in source
+    assert "state.settings.passwordEnabled = false" in source
+    assert 'syncKey: ""' in source
+    assert "enabled: false" in source
+    assert "autoSync: false" in source
